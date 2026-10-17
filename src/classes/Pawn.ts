@@ -1,12 +1,15 @@
 import { Piece } from "./Piece";
 import type { Position } from "../types/Position";
 import { Board } from "./Board";
+import type { Color } from "../types/Color";
 
 export class Pawn extends Piece {
+  constructor(color: Color, startPosition: Position) {
+    super(color, startPosition, "pawn");
+  }
   getPossibleMoves(board: Board): Position[] {
     const direction = this.color === "white" ? -1 : 1;
     const { row, col } = this.position;
-    const moved = this.hasMoved
     const nextRow = row + direction;
     const twoRowMove = row + direction * 2
     const moves: Position[] = []
