@@ -2,6 +2,7 @@ import { Board } from "./Board";
 import { Piece } from "./Piece";
 import type { Position } from "../types/Position";
 import type { Color } from "../types/Color";
+import { getSlidingMoves } from "./helpers/getSlideMoves";
 
 export class Rook extends Piece {
   constructor(color: Color, starPosition: Position) {
@@ -9,8 +10,6 @@ export class Rook extends Piece {
   }
 
   getPossibleMoves(board: Board): Position[] {
-    const { row, col } = this.position
-    const moves: Position[] = []
     const directions: Position[] = [
       { row: 1, col: 0 },
       { row: -1, col: 0 },
@@ -18,28 +17,7 @@ export class Rook extends Piece {
       { row: 0, col: -1 },
     ]
 
-    for (const direction of directions) {
-      let r = row + direction.row;
-      let c = col + direction.col;
 
-      while (board.isInside({ row: r, col: c })) {
-        const position = { row: r, col: c };
-        const target = board.getPiece(position);
-        if (target === null) {
-          moves.push(position)
-        } else {
-          if (target.color !== this.color) {
-            moves.push(position)
-          }
-
-          break
-        }
-
-        r += direction.row;
-        c += direction.col;
-      }
-    }
-
-    return moves
+    return getSlidingMoves(this, board, directions)
   }
 }
