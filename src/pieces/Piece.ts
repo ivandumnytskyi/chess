@@ -1,7 +1,7 @@
 import type { Color } from "../types/Color";
 import type { Position } from "../types/Position";
 import type { PieceType } from "../types/PieceType";
-import { Board } from "./Board" 
+import type { Board } from "../game/Board";
 
 export abstract class Piece {
   public hasMoved = false;

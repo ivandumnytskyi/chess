@@ -1,4 +1,4 @@
-import { Board } from "./Board";
+import type { Board } from "../game/Board";
 import { Piece } from "./Piece";
 import type { Position } from "../types/Position";
 import type { Color } from "../types/Color";

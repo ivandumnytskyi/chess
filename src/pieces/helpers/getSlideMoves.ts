@@ -1,5 +1,5 @@
 import type { Piece } from "../Piece";
-import type { Board } from "../Board";
+import type { Board } from "../../game/Board";
 import type { Position } from "../../types/Position";
 
 export function getSlidingMoves(

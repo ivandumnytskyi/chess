@@ -1,4 +1,4 @@
-import { Piece } from "./Piece"
+import type { Piece } from "../pieces/Piece";
 import type { Position } from "../types/Position";
 import type { MoveData } from "../types/MoveData";
 
