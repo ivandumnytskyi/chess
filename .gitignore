@@ -1,3 +1,6 @@
-# file i euse for testing small Pieces of code
+# file i use for testing small Pieces of code
 test.ts
 
+node_modules
+dist/
+.env
