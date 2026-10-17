@@ -6,7 +6,7 @@ import { getSlidingMoves } from "./helpers/getSlideMoves";
 
 export class Bishop extends Piece {
   constructor(color: Color, starPosition: Position) {
-    super(color, starPosition, "bishop")
+    super(color, starPosition, "queen")
   }
 
   getPossibleMoves(board: Board): Position[] {
