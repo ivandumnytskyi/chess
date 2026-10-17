@@ -10,31 +10,42 @@ export class Board {
     );
   }
 
-  getPiece(position: Position): Piece|null{
+  getPiece(position: Position): Piece | null {
+    if (!this.isInside(position)) {
+      return null;
+    }
     return this.squares[position.row][position.col];
   }
 
-  placePiece(Piece:Piece):void{
-    const { row, col } = Piece.position;
-    this.squares[row][col] = Piece
+  placePiece(piece: Piece): void {
+    const { row, col } = piece.position;
+    this.squares[row][col] = piece
   }
 
   removePiece(position: Position): Piece | null {
     const piece = this.getPiece(position);
 
     this.squares[position.row][position.col] = null;
-
     return piece;
   }
 
-  movePiece(moveData:MoveData):void{
-    const Piece = this.removePiece(moveData.from)
+  movePiece(moveData: MoveData): void {
+    const piece = this.getPiece(moveData.from);
 
-    if (!Piece) {
-    throw new Error("No piece at the starting position");
+    if (!piece) {
+      throw new Error("No piece at the starting position");
+    }
+
+    this.removePiece(moveData.from)
+
+    piece.position = moveData.to;
+    piece.hasMoved = true
+    this.placePiece(piece)
   }
 
-    Piece.position = moveData.to;
-    this.placePiece(Piece)
+  isInside(position: Position): boolean {
+    const { row, col } = position;
+
+    return row >= 0 && row < 8 && col >= 0 && col < 8;
   }
 }

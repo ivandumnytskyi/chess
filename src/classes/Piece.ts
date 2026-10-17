@@ -4,6 +4,7 @@ import type { PieceType } from "../types/PieceType";
 import { Board } from "./Board" 
 
 export abstract class Piece {
+  public hasMoved = false;
   constructor(
     public readonly color: Color,
     public readonly startingPosition: Position,
