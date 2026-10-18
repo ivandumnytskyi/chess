@@ -56,34 +56,34 @@ export class Board {
   }
 
   setupInitialPosition(): void {
-  // Black pieces
-  this.placePiece(new Rook("black", { row: 0, col: 0 }));
-  this.placePiece(new Knight("black", { row: 0, col: 1 }));
-  this.placePiece(new Bishop("black", { row: 0, col: 2 }));
-  this.placePiece(new Queen("black", { row: 0, col: 3 }));
-  this.placePiece(new King("black", { row: 0, col: 4 }));
-  this.placePiece(new Bishop("black", { row: 0, col: 5 }));
-  this.placePiece(new Knight("black", { row: 0, col: 6 }));
-  this.placePiece(new Rook("black", { row: 0, col: 7 }));
+    // Black pieces
+    this.placePiece(new Rook("black", { row: 0, col: 0 }));
+    this.placePiece(new Knight("black", { row: 0, col: 1 }));
+    this.placePiece(new Bishop("black", { row: 0, col: 2 }));
+    this.placePiece(new Queen("black", { row: 0, col: 3 }));
+    this.placePiece(new King("black", { row: 0, col: 4 }));
+    this.placePiece(new Bishop("black", { row: 0, col: 5 }));
+    this.placePiece(new Knight("black", { row: 0, col: 6 }));
+    this.placePiece(new Rook("black", { row: 0, col: 7 }));
 
-  // Black pawns
-  for (let col = 0; col < 8; col++) {
-    this.placePiece(new Pawn("black", { row: 1, col }));
+    // Black pawns
+    for (let col = 0; col < 8; col++) {
+      this.placePiece(new Pawn("black", { row: 1, col }));
+    }
+
+    // White pawns
+    for (let col = 0; col < 8; col++) {
+      this.placePiece(new Pawn("white", { row: 6, col }));
+    }
+
+    // White pieces
+    this.placePiece(new Rook("white", { row: 7, col: 0 }));
+    this.placePiece(new Knight("white", { row: 7, col: 1 }));
+    this.placePiece(new Bishop("white", { row: 7, col: 2 }));
+    this.placePiece(new Queen("white", { row: 7, col: 3 }));
+    this.placePiece(new King("white", { row: 7, col: 4 }));
+    this.placePiece(new Bishop("white", { row: 7, col: 5 }));
+    this.placePiece(new Knight("white", { row: 7, col: 6 }));
+    this.placePiece(new Rook("white", { row: 7, col: 7 }));
   }
-
-  // White pawns
-  for (let col = 0; col < 8; col++) {
-    this.placePiece(new Pawn("white", { row: 6, col }));
-  }
-
-  // White pieces
-  this.placePiece(new Rook("white", { row: 7, col: 0 }));
-  this.placePiece(new Knight("white", { row: 7, col: 1 }));
-  this.placePiece(new Bishop("white", { row: 7, col: 2 }));
-  this.placePiece(new Queen("white", { row: 7, col: 3 }));
-  this.placePiece(new King("white", { row: 7, col: 4 }));
-  this.placePiece(new Bishop("white", { row: 7, col: 5 }));
-  this.placePiece(new Knight("white", { row: 7, col: 6 }));
-  this.placePiece(new Rook("white", { row: 7, col: 7 }));
-}
 }

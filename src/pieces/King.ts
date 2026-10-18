@@ -28,7 +28,8 @@ export class King extends Piece {
       }
 
       const target = board.getPiece(position);
-      return target === null || target.color !== this.color;})
+      return target === null || target.color !== this.color;
+    })
 
     return moves
   }

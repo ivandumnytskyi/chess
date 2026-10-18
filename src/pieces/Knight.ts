@@ -10,18 +10,18 @@ export class Knight extends Piece {
 
   getPossibleMoves(board: Board): Position[] {
     const { row, col } = this.position;
-    const ofset:Position[] = [
-      {row: -2, col: -1},
-      {row: -2, col: 1},
-      {row: -1, col: -2},
-      {row: -1, col: 2},
-      {row: 1, col: -2},
-      {row: 1, col: 2},
-      {row: 2, col: -1},
-      {row: 2, col: 1},
+    const ofset: Position[] = [
+      { row: -2, col: -1 },
+      { row: -2, col: 1 },
+      { row: -1, col: -2 },
+      { row: -1, col: 2 },
+      { row: 1, col: -2 },
+      { row: 1, col: 2 },
+      { row: 2, col: -1 },
+      { row: 2, col: 1 },
     ]
-    const moves: Position[] = ofset.map((ofs)=>{
-      return {row: ofs.row + row, col: ofs.col + col}
+    const moves: Position[] = ofset.map((ofs) => {
+      return { row: ofs.row + row, col: ofs.col + col }
     }).filter(position => {
       if (!board.isInside(position)) {
         return false;

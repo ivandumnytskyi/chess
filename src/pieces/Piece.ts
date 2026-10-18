@@ -10,7 +10,7 @@ export abstract class Piece {
     public readonly color: Color,
     public readonly startingPosition: Position,
     public pieceType: PieceType
-  ) {this.position = { ...startingPosition };}
+  ) { this.position = { ...startingPosition }; }
 
   //Piece move logic
   abstract getPossibleMoves(board: Board): Position[];

@@ -25,7 +25,7 @@ export class Pawn extends Piece {
         const target = board.getPiece(c)
         return (target !== null && target.color !== this.color)
       }))
-      
+
       const oneStep: Position = { row: nextRow, col };
 
       if (board.getPiece(oneStep) === null) {
