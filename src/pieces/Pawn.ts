@@ -15,53 +15,51 @@ export class Pawn extends Piece {
     const moves: Position[] = []
     if (!board.isInside({ row: nextRow, col })) {
       return moves
-    } else {
-      const posibleCaptures: Position[] = [{ row: nextRow, col: col + 1 }, { row: nextRow, col: col - 1 }]
-
-      moves.push(...posibleCaptures.filter(c => {
-        if (!board.isInside(c)) {
-          return false;
-        }
-        const target = board.getPiece(c)
-        return (target !== null && target.color !== this.color)
-      }))
-
-      const oneStep: Position = { row: nextRow, col };
-
-      if (board.getPiece(oneStep) === null) {
-        moves.push(oneStep);
-
-        const twoSteps: Position = { row: twoRowMove, col };
-
-        if (
-          !this.hasMoved &&
-          board.isInside(twoSteps) &&
-          board.getPiece(twoSteps) === null
-        ) {
-          moves.push(twoSteps);
-        }
-      }
-
-      return moves
     }
+    const posibleCaptures: Position[] = this.getAttackSquares(board)
+
+    moves.push(
+      ...posibleCaptures.filter(c => {
+        const target = board.getPiece(c);
+        return target !== null && target.color !== this.color;
+      })
+    );
+
+    const oneStep: Position = { row: nextRow, col };
+
+    if (board.getPiece(oneStep) === null) {
+      moves.push(oneStep);
+
+      const twoSteps: Position = { row: twoRowMove, col };
+
+      if (
+        !this.hasMoved &&
+        board.isInside(twoSteps) &&
+        board.getPiece(twoSteps) === null
+      ) {
+        moves.push(twoSteps);
+      }
+    }
+
+    return moves
   }
   getAttackSquares(board: Board): Position[] {
-  const { row, col } = this.position;
-  const direction = this.color === 'white' ? -1 : 1;
+    const { row, col } = this.position;
+    const direction = this.color === 'white' ? -1 : 1;
 
-  const attacks: Position[] = [];
+    const attacks: Position[] = [];
 
-  for (const offset of [-1, 1]) {
-    const position = {
-      row: row + direction,
-      col: col + offset,
-    };
+    for (const offset of [-1, 1]) {
+      const position = {
+        row: row + direction,
+        col: col + offset,
+      };
 
-    if (board.isInside(position)) {
-      attacks.push(position);
+      if (board.isInside(position)) {
+        attacks.push(position);
+      }
     }
-  }
 
-  return attacks;
-}
+    return attacks;
+  }
 }
