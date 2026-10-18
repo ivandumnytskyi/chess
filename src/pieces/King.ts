@@ -8,7 +8,9 @@ export class King extends Piece {
     super(color, starPosition, "king")
   }
 
-  getPossibleMoves(board: Board): Position[] {
+  getAttackSquares(board: Board): Position[] {
+    const { row, col } = this.position;
+
     const directions: Position[] = [
       { row: 1, col: 1 },
       { row: 1, col: -1 },
@@ -20,17 +22,19 @@ export class King extends Piece {
       { row: 0, col: -1 },
     ]
 
-    const { row, col } = this.position
+    return directions
+      .map(direction => ({
+        row: row + direction.row,
+        col: col + direction.col,
+      }))
+      .filter(position => board.isInside(position));
+  }
 
-    const moves = directions.map(d => { return { row: d.row + row, col: d.col + col } }).filter(position => {
-      if (!board.isInside(position)) {
-        return false;
-      }
-
+  getPossibleMoves(board: Board): Position[] {
+    return this.getAttackSquares(board).filter(position => {
       const target = board.getPiece(position);
-      return target === null || target.color !== this.color;
-    })
 
-    return moves
+      return target === null || target.color !== this.color;
+    });
   }
 }

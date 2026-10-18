@@ -20,4 +20,15 @@ export class Rook extends Piece {
 
     return getSlidingMoves(this, board, directions)
   }
+
+  getAttackSquares(board: Board): Position[] {
+    const directions: Position[] = [
+      { row: 1, col: 0 },
+      { row: -1, col: 0 },
+      { row: 0, col: 1 },
+      { row: 0, col: -1 },
+    ]
+
+    return getSlidingMoves(this, board, directions)
+  }
 }

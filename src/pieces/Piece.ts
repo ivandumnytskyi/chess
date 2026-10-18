@@ -14,4 +14,5 @@ export abstract class Piece {
 
   //Piece move logic
   abstract getPossibleMoves(board: Board): Position[];
+  abstract getAttackSquares(board: Board): Position[]
 }

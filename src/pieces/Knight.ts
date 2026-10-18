@@ -8,9 +8,10 @@ export class Knight extends Piece {
     super(color, startPosition, "knight");
   }
 
-  getPossibleMoves(board: Board): Position[] {
+  getAttackSquares(board: Board): Position[] {
     const { row, col } = this.position;
-    const ofset: Position[] = [
+
+    const directions: Position[] = [
       { row: -2, col: -1 },
       { row: -2, col: 1 },
       { row: -1, col: -2 },
@@ -20,17 +21,20 @@ export class Knight extends Piece {
       { row: 2, col: -1 },
       { row: 2, col: 1 },
     ]
-    const moves: Position[] = ofset.map((ofs) => {
-      return { row: ofs.row + row, col: ofs.col + col }
-    }).filter(position => {
-      if (!board.isInside(position)) {
-        return false;
-      }
 
+    return directions
+      .map(direction => ({
+        row: row + direction.row,
+        col: col + direction.col,
+      }))
+      .filter(position => board.isInside(position));
+  }
+
+  getPossibleMoves(board: Board): Position[] {
+    return this.getAttackSquares(board).filter(position => {
       const target = board.getPiece(position);
+
       return target === null || target.color !== this.color;
     });
-
-    return moves
   }
 }

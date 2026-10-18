@@ -43,7 +43,25 @@ export class Pawn extends Piece {
       }
 
       return moves
-      // Promotion?
     }
   }
+  getAttackSquares(board: Board): Position[] {
+  const { row, col } = this.position;
+  const direction = this.color === 'white' ? -1 : 1;
+
+  const attacks: Position[] = [];
+
+  for (const offset of [-1, 1]) {
+    const position = {
+      row: row + direction,
+      col: col + offset,
+    };
+
+    if (board.isInside(position)) {
+      attacks.push(position);
+    }
+  }
+
+  return attacks;
+}
 }
