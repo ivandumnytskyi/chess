@@ -1,7 +1,5 @@
 import { Board } from "./Board";
-import { Color } from "../types/Color";
-import { GameStatus } from "../types/GameStatus";
-import { MoveData } from "../types/MoveData";
+import { Color, GameStatus, MoveData } from "../types/chess";
 
 export class ChessGame {
   private board: Board;

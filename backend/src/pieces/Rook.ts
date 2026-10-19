@@ -1,7 +1,6 @@
 import type { Board } from "../game/Board";
 import { Piece } from "./Piece";
-import type { Position } from "../types/Position";
-import type { Color } from "../types/Color";
+import type { Position, Color } from "../types/chess";
 import { getSlidingMoves } from "./helpers/getSlideMoves";
 
 export class Rook extends Piece {

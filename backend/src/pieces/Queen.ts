@@ -1,7 +1,6 @@
 import type { Board } from "../game/Board";
 import { Piece } from "./Piece";
-import type { Position } from "../types/Position";
-import type { Color } from "../types/Color";
+import type { Color, Position } from "../types/chess";
 import { getSlidingMoves } from "./helpers/getSlideMoves";
 
 export class Queen extends Piece {
@@ -22,7 +21,7 @@ export class Queen extends Piece {
     ]
 
     return getSlidingMoves(this, board, directions)
-    
+
   }
 
   getAttackSquares(board: Board): Position[] {

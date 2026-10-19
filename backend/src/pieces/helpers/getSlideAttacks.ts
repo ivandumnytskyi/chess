@@ -1,6 +1,6 @@
 import type { Piece } from "../Piece";
 import type { Board } from "../../game/Board";
-import type { Position } from "../../types/Position";
+import type { Position } from "../../types/chess";
 
 export function getSlidingAttacks(
   piece: Piece,

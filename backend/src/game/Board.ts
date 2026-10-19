@@ -1,6 +1,5 @@
 import type { Piece } from "../pieces/Piece";
-import type { Position } from "../types/Position";
-import type { MoveData } from "../types/MoveData";
+import type { Position, MoveData, Color } from "../types/chess";
 import { Pawn } from "../pieces/Pawn";
 import { Rook } from "../pieces/Rook";
 import { Knight } from "../pieces/Knight";
@@ -53,6 +52,30 @@ export class Board {
     const { row, col } = position;
 
     return row >= 0 && row < 8 && col >= 0 && col < 8;
+  }
+
+  isSquareAttacked(position: Position, byColor: Color): boolean {
+    for (const row of this.squares) {
+      for (const piece of row) {
+        if (piece === null || piece.color !== byColor) {
+          continue;
+        }
+
+        const attacks = piece.getAttackSquares(this);
+
+        if (
+          attacks.some(
+            square =>
+              square.row === position.row &&
+              square.col === position.col
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   setupInitialPosition(): void {

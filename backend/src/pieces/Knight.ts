@@ -1,7 +1,6 @@
 import { Piece } from "./Piece";
-import type { Position } from "../types/Position";
+import type { Position, Color } from "../types/chess";
 import type { Board } from "../game/Board";
-import type { Color } from "../types/Color";
 
 export class Knight extends Piece {
   constructor(color: Color, startPosition: Position) {
