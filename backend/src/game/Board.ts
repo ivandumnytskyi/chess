@@ -24,7 +24,10 @@ export class Board {
 
   placePiece(piece: Piece): void {
     const { row, col } = piece.position;
-    this.squares[row][col] = piece
+    if (!this.isInside(piece.position)) {
+      throw new Error("Position is outside the board");
+    }
+    this.squares[row][col] = piece;
   }
 
   removePiece(position: Position): Piece | null {
@@ -35,17 +38,28 @@ export class Board {
   }
 
   movePiece(moveData: MoveData): void {
+    if (!this.isInside(moveData.from) || !this.isInside(moveData.to)) {
+      throw new Error("Move position is outside the board");
+    }
+
     const piece = this.getPiece(moveData.from);
 
     if (!piece) {
       throw new Error("No piece at the starting position");
     }
 
-    this.removePiece(moveData.from)
+    const target = this.getPiece(moveData.to);
+    if (target?.color === piece.color) {
+      throw new Error("Cannot capture your own piece");
+    }
+    if (target?.pieceType === "king") {
+      throw new Error("A king cannot be captured");
+    }
 
-    piece.position = moveData.to;
-    piece.hasMoved = true
-    this.placePiece(piece)
+    this.removePiece(moveData.from);
+    piece.position = { ...moveData.to };
+    piece.hasMoved = true;
+    this.placePiece(piece);
   }
 
   clone(): Board {
@@ -53,21 +67,17 @@ export class Board {
     for (const row of this.squares) {
       for (const piece of row) {
         if (piece) {
-          const clonePice = piece.clone()
-          cloneBoard.placePiece(clonePice)
+          cloneBoard.placePiece(piece.clone());
         }
       }
     }
     return cloneBoard
   }
 
-  findKing(color: Color) {
+  findKing(color: Color): Piece | undefined {
     for (const row of this.squares) {
       for (const piece of row) {
-        if (!piece) {
-          continue
-        }
-        if (piece.color === color && piece.pieceType === 'king') {
+        if (piece?.color === color && piece.pieceType === "king") {
           return piece
         }
       }
