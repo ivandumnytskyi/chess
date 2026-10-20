@@ -2,22 +2,18 @@ import { Board } from "./Board";
 import type { Color, GameStatus, MoveData, Position } from "../types/chess";
 
 export class ChessGame {
-  private board: Board;
-  private currentTurn: Color;
-  private gameStatus: GameStatus;
-  private movesHistory: MoveData[];
+  private board: Board = new Board();
+  private currentTurn: Color = 'white';
+  private gameStatus: GameStatus = 'active';
+  private movesHistory: MoveData[] = [];
+  private enPassantTarget: Position | null = null;
 
   constructor() {
-    this.board = new Board()
     this.board.setupInitialPosition();
-
-    this.movesHistory = []
-    this.currentTurn = 'white'
-    this.gameStatus = 'active'
   }
 
-  getBoard() {
-    return this.board
+  getBoardState() {
+    return this.board.clone()
   }
 
   getLegalMoves(from: Position): Position[] {
@@ -25,6 +21,23 @@ export class ChessGame {
     if (!piece) return [];
 
     const candidates = piece.getPossibleMoves(this.board);
+    if (piece.pieceType === "pawn" && this.enPassantTarget) {
+      const target = this.enPassantTarget;
+      const capturedPawn = this.board.getPiece({
+        row: from.row,
+        col: target.col,
+      });
+
+      if (
+        target.row === from.row + (piece.color === "white" ? -1 : 1) &&
+        Math.abs(target.col - from.col) === 1 &&
+        this.board.getPiece(target) === null &&
+        capturedPawn?.pieceType === "pawn" &&
+        capturedPawn.color !== piece.color
+      ) {
+        candidates.push({ ...target });
+      }
+    }
 
     return candidates.filter(to => {
       const target = this.board.getPiece(to);
@@ -33,6 +46,16 @@ export class ChessGame {
       }
 
       const simulatedBoard = this.board.clone();
+      const isEnPassant =
+        piece.pieceType === "pawn" &&
+        from.col !== to.col &&
+        target === null &&
+        this.enPassantTarget?.row === to.row &&
+        this.enPassantTarget.col === to.col;
+
+      if (isEnPassant) {
+        simulatedBoard.removePiece({ row: from.row, col: to.col });
+      }
       simulatedBoard.movePiece({ from, to });
 
       const king = simulatedBoard.findKing(piece.color);
@@ -70,11 +93,33 @@ export class ChessGame {
       throw new Error("Illegal move");
     }
 
+    const isEnPassant =
+      chosenPiece.pieceType === "pawn" &&
+      move.from.col !== move.to.col &&
+      this.board.getPiece(move.to) === null &&
+      this.enPassantTarget?.row === move.to.row &&
+      this.enPassantTarget.col === move.to.col;
+
+    if (isEnPassant) {
+      this.board.removePiece({ row: move.from.row, col: move.to.col });
+    }
+
     this.board.movePiece(move);
     this.movesHistory.push({
       from: { ...move.from },
       to: { ...move.to },
     });
+
+    this.enPassantTarget = null;
+    if (
+      chosenPiece.pieceType === "pawn" &&
+      Math.abs(move.from.row - move.to.row) === 2
+    ) {
+      this.enPassantTarget = {
+        row: (move.from.row + move.to.row) / 2,
+        col: move.to.col,
+      };
+    }
     this.currentTurn = this.currentTurn === 'white' ? 'black' : 'white';
 
     const opponent = this.currentTurn;
