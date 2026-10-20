@@ -21,6 +21,36 @@ export class ChessGame {
     if (!piece) return [];
 
     const candidates = piece.getPossibleMoves(this.board);
+    
+    if (
+      piece.pieceType === "king" &&
+      !piece.hasMoved &&
+      from.row === (piece.color === "white" ? 7 : 0) &&
+      from.col === 4 &&
+      piece.startingPosition.row === from.row &&
+      piece.startingPosition.col === from.col
+    ) {
+      for (const rookCol of [0, 7]) {
+        const rook = this.board.getPiece({ row: from.row, col: rookCol });
+
+        if (
+          rook?.pieceType !== "rook" ||
+          rook.color !== piece.color ||
+          rook.hasMoved ||
+          rook.startingPosition.row !== from.row ||
+          rook.startingPosition.col !== rookCol
+        ) {
+          continue;
+        }
+
+        const kingCol = rookCol === 7 ? 6 : 2;
+        const pathCols = rookCol === 7 ? [5, 6] : [1, 2, 3];
+        if (pathCols.every(col => this.board.getPiece({ row: from.row, col }) === null)) {
+          candidates.push({ row: from.row, col: kingCol });
+        }
+      }
+    }
+
     if (piece.pieceType === "pawn" && this.enPassantTarget) {
       const target = this.enPassantTarget;
       const capturedPawn = this.board.getPiece({
@@ -56,6 +86,36 @@ export class ChessGame {
       if (isEnPassant) {
         simulatedBoard.removePiece({ row: from.row, col: to.col });
       }
+
+      const isCastling =
+        piece.pieceType === "king" &&
+        from.row === to.row &&
+        Math.abs(to.col - from.col) === 2;
+      const opponent = piece.color === "white" ? "black" : "white";
+
+      if (isCastling) {
+        const kingSide = to.col > from.col;
+        const transitPosition = {
+          row: from.row,
+          col: from.col + (kingSide ? 1 : -1),
+        };
+
+        if (this.board.isSquareAttacked(from, opponent)) {
+          return false;
+        }
+
+        const transitBoard = this.board.clone();
+        transitBoard.movePiece({ from, to: transitPosition });
+        if (transitBoard.isSquareAttacked(transitPosition, opponent)) {
+          return false;
+        }
+
+        simulatedBoard.movePiece({
+          from: { row: from.row, col: kingSide ? 7 : 0 },
+          to: { row: from.row, col: kingSide ? 5 : 3 },
+        });
+      }
+
       simulatedBoard.movePiece({ from, to });
 
       const king = simulatedBoard.findKing(piece.color);
@@ -63,10 +123,11 @@ export class ChessGame {
         throw new Error(`Missing ${piece.color} king`);
       }
 
-      const opponent = piece.color === "white" ? "black" : "white";
       return !simulatedBoard.isSquareAttacked(king.position, opponent);
     });
   }
+
+
 
   makeMove(move: MoveData, whoMoved: Color): Board {
     if (this.gameStatus === 'checkmate' || this.gameStatus === 'stalemate') {
@@ -104,7 +165,28 @@ export class ChessGame {
       this.board.removePiece({ row: move.from.row, col: move.to.col });
     }
 
+    const isCastling =
+      chosenPiece.pieceType === "king" &&
+      move.from.row === move.to.row &&
+      Math.abs(move.to.col - move.from.col) === 2;
+
     this.board.movePiece(move);
+
+    if (isCastling) {
+      const kingSide = move.to.col > move.from.col;
+
+      this.board.movePiece({
+        from: {
+          row: move.from.row,
+          col: kingSide ? 7 : 0,
+        },
+        to: {
+          row: move.from.row,
+          col: kingSide ? 5 : 3,
+        },
+      });
+    }
+
     this.movesHistory.push({
       from: { ...move.from },
       to: { ...move.to },
