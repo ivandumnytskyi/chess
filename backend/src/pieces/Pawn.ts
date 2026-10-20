@@ -3,8 +3,13 @@ import type { Position, Color } from "../types/chess";
 import type { Board } from "../game/Board";
 
 export class Pawn extends Piece {
-  constructor(color: Color, startPosition: Position) {
-    super(color, startPosition, "pawn");
+  constructor(
+    color: Color,
+    startingPosition: Position,
+    hasMoved: boolean = false,
+    position?: Position
+  ) {
+    super(color, startingPosition, 'pawn', hasMoved, position);
   }
   getPossibleMoves(board: Board): Position[] {
     const direction = this.color === "white" ? -1 : 1;
@@ -60,5 +65,16 @@ export class Pawn extends Piece {
     }
 
     return attacks;
+  }
+
+  clone(): Pawn {
+    const clone = new Pawn(
+      this.color,
+      { ...this.startingPosition },
+      this.hasMoved,
+      { ...this.position }
+    );
+
+    return clone;
   }
 }

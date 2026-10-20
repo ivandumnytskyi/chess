@@ -48,6 +48,33 @@ export class Board {
     this.placePiece(piece)
   }
 
+  clone(): Board {
+    const cloneBoard = new Board()
+    for (const row of this.squares) {
+      for (const piece of row) {
+        if (piece) {
+          const clonePice = piece.clone()
+          cloneBoard.placePiece(clonePice)
+        }
+      }
+    }
+    return cloneBoard
+  }
+
+  findKing(color: Color) {
+    for (const row of this.squares) {
+      for (const piece of row) {
+        if (!piece) {
+          continue
+        }
+        if (piece.color === color && piece.pieceType === 'king') {
+          return piece
+        }
+      }
+    }
+
+  }
+
   isInside(position: Position): boolean {
     const { row, col } = position;
 

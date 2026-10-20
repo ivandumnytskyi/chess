@@ -3,8 +3,13 @@ import { Piece } from "./Piece";
 import type { Position, Color } from "../types/chess";
 
 export class King extends Piece {
-  constructor(color: Color, starPosition: Position) {
-    super(color, starPosition, "king")
+  constructor(
+    color: Color,
+    startingPosition: Position,
+    hasMoved: boolean = false,
+    position?: Position
+  ) {
+    super(color, startingPosition, 'king', hasMoved, position);
   }
 
   getAttackSquares(board: Board): Position[] {
@@ -35,5 +40,16 @@ export class King extends Piece {
 
       return target === null || target.color !== this.color;
     });
+  }
+
+  clone(): King {
+    const clone = new King(
+      this.color,
+      { ...this.startingPosition },
+      this.hasMoved,
+      { ...this.position }
+    );
+
+    return clone;
   }
 }
