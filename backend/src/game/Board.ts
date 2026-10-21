@@ -8,7 +8,7 @@ import { Queen } from "../pieces/Queen";
 import { King } from "../pieces/King";
 
 export class Board {
-  private squares: (Piece | null)[][];
+  public squares: (Piece | null)[][];
   constructor() {
     this.squares = Array.from({ length: 8 }, () =>
       Array<Piece | null>(8).fill(null)

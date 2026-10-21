@@ -1,5 +1,5 @@
 import { Board } from "./Board";
-import type { Color, GameStatus, MoveData, Position } from "../types/chess";
+import type { Color, GameStatus, MoveData, Position, PieceType } from "../types/chess";
 
 type PromotionPieceType = "queen" | "rook" | "bishop" | "knight";
 
@@ -7,16 +7,29 @@ export class ChessGame {
   private board: Board = new Board();
   private currentTurn: Color = 'white';
   private gameStatus: GameStatus = 'active';
-  private movesHistory: MoveData[] = [];
   private enPassantTarget: Position | null = null;
   private halfMove: number = 0;
+  private fullMoveNumber = 1;
+  private castlingRights = new Set<"K" | "Q" | "k" | "q">(["K", "Q", "k", "q"]);
+  private positionHistory = new Map<string, number>();
 
   constructor() {
     this.board.setupInitialPosition();
+    this.positionHistory.set(this.getRepetitionKey(), 1);
   }
 
   getBoardState() {
     return this.board.clone()
+  }
+
+  getFenNotation(): string {
+    return this.fenNotation(
+      this.currentTurn,
+      this.getCastlingRights(),
+      this.enPassantTarget,
+      this.halfMove,
+      this.fullMoveNumber
+    );
   }
 
   getLegalMoves(from: Position): Position[] {
@@ -34,9 +47,14 @@ export class ChessGame {
       piece.startingPosition.col === from.col
     ) {
       for (const rookCol of [0, 7]) {
+        const castlingRight =
+          piece.color === "white"
+            ? rookCol === 7 ? "K" : "Q"
+            : rookCol === 7 ? "k" : "q";
         const rook = this.board.getPiece({ row: from.row, col: rookCol });
 
         if (
+          !this.castlingRights.has(castlingRight) ||
           rook?.pieceType !== "rook" ||
           rook.color !== piece.color ||
           rook.hasMoved ||
@@ -130,14 +148,12 @@ export class ChessGame {
     });
   }
 
-
-
   makeMove(
     move: MoveData,
     whoMoved: Color,
     promotionPieceType?: PromotionPieceType
   ): Board {
-    if (this.gameStatus === 'checkmate' || this.gameStatus === 'stalemate') {
+    if (this.gameStatus === 'checkmate' || this.gameStatus === 'stalemate' || this.gameStatus === 'draw') {
       throw new Error("The game is not active");
     }
 
@@ -174,6 +190,7 @@ export class ChessGame {
       Math.abs(move.to.col - move.from.col) === 2;
     const isCapture =
       this.board.getPiece(move.to) !== null || isEnPassant;
+    const capturedPiece = this.board.getPiece(move.to);
 
     const promotionRow = chosenPiece.color === "white" ? 0 : 7;
     const isPromotion =
@@ -193,6 +210,22 @@ export class ChessGame {
       }
     } else if (promotionPieceType !== undefined) {
       throw new Error("Promotion piece can only be specified for a promoting move");
+    }
+
+    if (chosenPiece.pieceType === "king") {
+      this.castlingRights.delete(chosenPiece.color === "white" ? "K" : "k");
+      this.castlingRights.delete(chosenPiece.color === "white" ? "Q" : "q");
+    } else if (chosenPiece.pieceType === "rook") {
+      if (move.from.row === 7 && move.from.col === 0) this.castlingRights.delete("Q");
+      if (move.from.row === 7 && move.from.col === 7) this.castlingRights.delete("K");
+      if (move.from.row === 0 && move.from.col === 0) this.castlingRights.delete("q");
+      if (move.from.row === 0 && move.from.col === 7) this.castlingRights.delete("k");
+    }
+    if (capturedPiece?.pieceType === "rook") {
+      if (move.to.row === 7 && move.to.col === 0) this.castlingRights.delete("Q");
+      if (move.to.row === 7 && move.to.col === 7) this.castlingRights.delete("K");
+      if (move.to.row === 0 && move.to.col === 0) this.castlingRights.delete("q");
+      if (move.to.row === 0 && move.to.col === 7) this.castlingRights.delete("k");
     }
 
     if (isEnPassant) {
@@ -220,11 +253,6 @@ export class ChessGame {
       });
     }
 
-    this.movesHistory.push({
-      from: { ...move.from },
-      to: { ...move.to },
-    });
-
     this.enPassantTarget = null;
     if (
       chosenPiece.pieceType === "pawn" &&
@@ -242,6 +270,13 @@ export class ChessGame {
     }
 
     this.currentTurn = this.currentTurn === 'white' ? 'black' : 'white';
+    if (whoMoved === "black") {
+      this.fullMoveNumber += 1;
+    }
+
+    const positionKey = this.getRepetitionKey();
+    const occurrenceCount = (this.positionHistory.get(positionKey) ?? 0) + 1;
+    this.positionHistory.set(positionKey, occurrenceCount);
 
     const opponent = this.currentTurn;
     let opponentHasLegalMove = false;
@@ -270,12 +305,128 @@ export class ChessGame {
 
     if (!opponentHasLegalMove) {
       this.gameStatus = opponentIsInCheck ? 'checkmate' : 'stalemate';
-    } else if (this.halfMove === 100) {
+    } else if (this.halfMove >= 100 || occurrenceCount >= 3) {
       this.gameStatus = 'draw'
     } else {
       this.gameStatus = opponentIsInCheck ? 'check' : 'active';
     }
 
-    return this.board
+    return this.getBoardState()
+  }
+
+  fenNotation(
+    activeColor: Color = "white",
+    castlingRights?: string,
+    enPassantTarget: Position | null = null,
+    halfMoveClock = 0,
+    fullMoveNumber = 1
+  ): string {
+    const transcript: Record<PieceType, string> = {
+      bishop: "b",
+      king: "k",
+      knight: "n",
+      pawn: "p",
+      queen: "q",
+      rook: "r",
+    };
+    const ranks = this.board.squares.map(row => {
+      let rank = "";
+      let emptySquares = 0;
+
+      for (const piece of row) {
+        if (!piece) {
+          emptySquares += 1;
+          continue;
+        }
+
+        if (emptySquares > 0) {
+          rank += emptySquares;
+          emptySquares = 0;
+        }
+
+        const letter = transcript[piece.pieceType];
+        rank += piece.color === "white" ? letter.toUpperCase() : letter;
+      }
+
+      if (emptySquares > 0) {
+        rank += emptySquares;
+      }
+      return rank;
+    });
+
+    const enPassantSquare = enPassantTarget
+      ? `${String.fromCharCode(97 + enPassantTarget.col)}${8 - enPassantTarget.row}`
+      : "-";
+    const hasCastlingPieces = (color: Color, row: number, rookCol: number): boolean => {
+      const king = this.board.getPiece({ row, col: 4 });
+      const rook = this.board.getPiece({ row, col: rookCol });
+
+      return (
+        king?.pieceType === "king" &&
+        king.color === color &&
+        !king.hasMoved &&
+        king.startingPosition.row === row &&
+        king.startingPosition.col === 4 &&
+        rook?.pieceType === "rook" &&
+        rook.color === color &&
+        !rook.hasMoved &&
+        rook.startingPosition.row === row &&
+        rook.startingPosition.col === rookCol
+      );
+    };
+    const inferredCastlingRights = [
+      hasCastlingPieces("white", 7, 7) ? "K" : "",
+      hasCastlingPieces("white", 7, 0) ? "Q" : "",
+      hasCastlingPieces("black", 0, 7) ? "k" : "",
+      hasCastlingPieces("black", 0, 0) ? "q" : "",
+    ].join("");
+
+    return [
+      ranks.join("/"),
+      activeColor === "white" ? "w" : "b",
+      castlingRights ?? (inferredCastlingRights || "-"),
+      enPassantSquare,
+      halfMoveClock,
+      fullMoveNumber,
+    ].join(" ");
+  }
+
+  private getCastlingRights(): string {
+    return ["K", "Q", "k", "q"]
+      .filter(right => this.castlingRights.has(right as "K" | "Q" | "k" | "q"))
+      .join("") || "-";
+  }
+
+  private getRepetitionKey(): string {
+    let repetitionEnPassantTarget: Position | null = null;
+
+    if (this.enPassantTarget) {
+      const direction = this.currentTurn === "white" ? -1 : 1;
+      const sourceRow = this.enPassantTarget.row - direction;
+
+      for (const sourceCol of [this.enPassantTarget.col - 1, this.enPassantTarget.col + 1]) {
+        const source = { row: sourceRow, col: sourceCol };
+        const pawn = this.board.getPiece(source);
+
+        if (
+          pawn?.pieceType === "pawn" &&
+          pawn.color === this.currentTurn &&
+          this.getLegalMoves(source).some(
+            destination =>
+              destination.row === this.enPassantTarget?.row &&
+              destination.col === this.enPassantTarget?.col
+          )
+        ) {
+          repetitionEnPassantTarget = this.enPassantTarget;
+          break;
+        }
+      }
+    }
+
+    return this.fenNotation(
+      this.currentTurn,
+      this.getCastlingRights(),
+      repetitionEnPassantTarget
+    ).split(" ").slice(0, 4).join(" ");
   }
 }
