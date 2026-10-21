@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "Node16",
     "moduleResolution": "Node16",
-    "rootDir": "./backend/src",
+    "rootDir": "./backend",
     "outDir": "./dist",
 
     "strict": true,
@@ -11,6 +11,6 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["backend/src/**/*.ts"],
+  "include": ["backend/src/**/*.ts", "backend/tests/ChessGame.test.ts"],
   "exclude": ["node_modules", "dist"]
 }
