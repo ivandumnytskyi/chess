@@ -1,12 +1,15 @@
 import { Board } from "./Board";
 import type { Color, GameStatus, MoveData, Position } from "../types/chess";
 
+type PromotionPieceType = "queen" | "rook" | "bishop" | "knight";
+
 export class ChessGame {
   private board: Board = new Board();
   private currentTurn: Color = 'white';
   private gameStatus: GameStatus = 'active';
   private movesHistory: MoveData[] = [];
   private enPassantTarget: Position | null = null;
+  private halfMove: number = 0;
 
   constructor() {
     this.board.setupInitialPosition();
@@ -21,7 +24,7 @@ export class ChessGame {
     if (!piece) return [];
 
     const candidates = piece.getPossibleMoves(this.board);
-    
+
     if (
       piece.pieceType === "king" &&
       !piece.hasMoved &&
@@ -129,7 +132,11 @@ export class ChessGame {
 
 
 
-  makeMove(move: MoveData, whoMoved: Color): Board {
+  makeMove(
+    move: MoveData,
+    whoMoved: Color,
+    promotionPieceType?: PromotionPieceType
+  ): Board {
     if (this.gameStatus === 'checkmate' || this.gameStatus === 'stalemate') {
       throw new Error("The game is not active");
     }
@@ -161,16 +168,42 @@ export class ChessGame {
       this.enPassantTarget?.row === move.to.row &&
       this.enPassantTarget.col === move.to.col;
 
-    if (isEnPassant) {
-      this.board.removePiece({ row: move.from.row, col: move.to.col });
-    }
-
     const isCastling =
       chosenPiece.pieceType === "king" &&
       move.from.row === move.to.row &&
       Math.abs(move.to.col - move.from.col) === 2;
+    const isCapture =
+      this.board.getPiece(move.to) !== null || isEnPassant;
+
+    const promotionRow = chosenPiece.color === "white" ? 0 : 7;
+    const isPromotion =
+      chosenPiece.pieceType === "pawn" && move.to.row === promotionRow;
+    let promotionType: PromotionPieceType | undefined;
+
+    if (isPromotion) {
+      switch (promotionPieceType) {
+        case "queen":
+        case "rook":
+        case "bishop":
+        case "knight":
+          promotionType = promotionPieceType;
+          break;
+        default:
+          throw new Error("Choose queen, rook, bishop, or knight for promotion");
+      }
+    } else if (promotionPieceType !== undefined) {
+      throw new Error("Promotion piece can only be specified for a promoting move");
+    }
+
+    if (isEnPassant) {
+      this.board.removePiece({ row: move.from.row, col: move.to.col });
+    }
 
     this.board.movePiece(move);
+
+    if (promotionType) {
+      this.board.promotion(chosenPiece.color, promotionType, move.to);
+    }
 
     if (isCastling) {
       const kingSide = move.to.col > move.from.col;
@@ -202,6 +235,12 @@ export class ChessGame {
         col: move.to.col,
       };
     }
+    if (chosenPiece.pieceType === 'pawn' || isCapture) {
+      this.halfMove = 0
+    } else {
+      this.halfMove += 1
+    }
+
     this.currentTurn = this.currentTurn === 'white' ? 'black' : 'white';
 
     const opponent = this.currentTurn;
@@ -231,6 +270,8 @@ export class ChessGame {
 
     if (!opponentHasLegalMove) {
       this.gameStatus = opponentIsInCheck ? 'checkmate' : 'stalemate';
+    } else if (this.halfMove === 100) {
+      this.gameStatus = 'draw'
     } else {
       this.gameStatus = opponentIsInCheck ? 'check' : 'active';
     }

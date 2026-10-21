@@ -5,6 +5,7 @@ export type GameStatus =
   | 'check'
   | 'checkmate'
   | 'stalemate'
+  | 'draw'
 
 export type Position = {
   row: number;

@@ -1,5 +1,5 @@
 import type { Piece } from "../pieces/Piece";
-import type { Position, MoveData, Color } from "../types/chess";
+import type { Position, MoveData, Color, PieceType } from "../types/chess";
 import { Pawn } from "../pieces/Pawn";
 import { Rook } from "../pieces/Rook";
 import { Knight } from "../pieces/Knight";
@@ -113,6 +113,36 @@ export class Board {
     }
 
     return false;
+  }
+
+  promotion(color: Color, pieceType: PieceType, position: Position) {
+    const pawn = this.getPiece(position);
+
+    if (pawn?.pieceType !== "pawn" || pawn.color !== color) {
+      throw new Error("No matching pawn to promote");
+    }
+
+    let promotedPiece: Piece;
+
+    switch (pieceType) {
+      case "queen":
+        promotedPiece = new Queen(color, position);
+        break;
+      case "rook":
+        promotedPiece = new Rook(color, position);
+        break;
+      case "bishop":
+        promotedPiece = new Bishop(color, position);
+        break;
+      case "knight":
+        promotedPiece = new Knight(color, position);
+        break;
+      default:
+        throw new Error("Invalid promotion piece");
+    }
+
+    this.removePiece(position);
+    this.placePiece(promotedPiece);
   }
 
   setupInitialPosition(): void {
