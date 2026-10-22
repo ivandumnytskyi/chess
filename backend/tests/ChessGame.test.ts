@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { Bishop } from "../src/pieces/Bishop";
+import { Board } from "../src/game/Board";
+import { King } from "../src/pieces/King";
+import { Knight } from "../src/pieces/Knight";
+import { Pawn } from "../src/pieces/Pawn";
+import { Rook } from "../src/pieces/Rook";
 import { ChessGame } from "../src/game/ChessGame";
+import { hasInsufficientMaterial } from "../src/game/insufficientMaterial";
+
+function createMaterialBoard(): Board {
+  const board = new Board();
+  board.placePiece(new King("white", { row: 7, col: 4 }));
+  board.placePiece(new King("black", { row: 0, col: 4 }));
+  return board;
+}
 
 function playUciSequence(
   game: ChessGame,
@@ -30,6 +44,78 @@ function playUciSequence(
     game.makeMove({ from, to }, color, promotionType);
   }
 }
+
+describe("Insufficient-material detection", () => {
+  it.each([
+    ["king versus king", createMaterialBoard()],
+    [
+      "king and bishop versus king",
+      (() => {
+        const board = createMaterialBoard();
+        board.placePiece(new Bishop("white", { row: 6, col: 3 }));
+        return board;
+      })(),
+    ],
+    [
+      "king and knight versus king",
+      (() => {
+        const board = createMaterialBoard();
+        board.placePiece(new Knight("white", { row: 6, col: 3 }));
+        return board;
+      })(),
+    ],
+    [
+      "same-colored bishops only",
+      (() => {
+        const board = createMaterialBoard();
+        board.placePiece(new Bishop("white", { row: 6, col: 3 }));
+        board.placePiece(new Bishop("black", { row: 1, col: 2 }));
+        return board;
+      })(),
+    ],
+  ])("detects insufficient material for %s", (_description, board) => {
+    expect(hasInsufficientMaterial(board)).toBe(true);
+  });
+
+  it.each([
+    [
+      "bishops on opposite-colored squares",
+      (() => {
+        const board = createMaterialBoard();
+        board.placePiece(new Bishop("white", { row: 6, col: 3 }));
+        board.placePiece(new Bishop("black", { row: 1, col: 3 }));
+        return board;
+      })(),
+    ],
+    [
+      "two knights against a bare king",
+      (() => {
+        const board = createMaterialBoard();
+        board.placePiece(new Knight("white", { row: 6, col: 3 }));
+        board.placePiece(new Knight("white", { row: 6, col: 5 }));
+        return board;
+      })(),
+    ],
+    [
+      "a pawn remains",
+      (() => {
+        const board = createMaterialBoard();
+        board.placePiece(new Pawn("white", { row: 6, col: 3 }));
+        return board;
+      })(),
+    ],
+    [
+      "a rook remains",
+      (() => {
+        const board = createMaterialBoard();
+        board.placePiece(new Rook("white", { row: 6, col: 3 }));
+        return board;
+      })(),
+    ],
+  ])("does not classify %s as insufficient material", (_description, board) => {
+    expect(hasInsufficientMaterial(board)).toBe(false);
+  });
+});
 
 describe("ChessGame", () => {
   it("starts in the standard position", () => {

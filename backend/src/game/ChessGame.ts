@@ -1,4 +1,5 @@
 import { Board } from "./Board";
+import { hasInsufficientMaterial } from "./insufficientMaterial";
 import type { Color, GameStatus, MoveData, Position, PieceType } from "../types/chess";
 
 type PromotionPieceType = "queen" | "rook" | "bishop" | "knight";
@@ -309,7 +310,11 @@ export class ChessGame {
 
     if (!opponentHasLegalMove) {
       this.gameStatus = opponentIsInCheck ? 'checkmate' : 'stalemate';
-    } else if (this.halfMove >= 100 || occurrenceCount >= 3) {
+    } else if (
+      hasInsufficientMaterial(this.board) ||
+      this.halfMove >= 100 ||
+      occurrenceCount >= 3
+    ) {
       this.gameStatus = 'draw'
     } else {
       this.gameStatus = opponentIsInCheck ? 'check' : 'active';
