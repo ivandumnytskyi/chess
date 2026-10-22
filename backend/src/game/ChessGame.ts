@@ -22,6 +22,10 @@ export class ChessGame {
     return this.board.clone()
   }
 
+  getGameStatus(): GameStatus {
+    return this.gameStatus;
+  }
+
   getFenNotation(): string {
     return this.fenNotation(
       this.currentTurn,
