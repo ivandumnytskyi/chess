@@ -1,0 +1,7 @@
+- This project uses TypeScript and Vitest.
+- Test files are named `*.test.ts` and sit in folder named `__tests__`.
+- Import `describe`, `it`, `expect`, `vi` explicitly from "vitest".
+- Avoid `any`. Prefer explicit assertions over snapshots.
+- Use `it.each` for multiple input cases.
+- Prefer real objects over mocks; use `vi.fn()` / `vi.mock()` only for I/O boundaries (network, fs, time).
+- Structure: arrange / act / assert, one behavior per test.
