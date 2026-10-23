@@ -27,6 +27,10 @@ export class ChessGame {
     return this.gameStatus;
   }
 
+  getCurrentTurn(): Color {
+    return this.currentTurn;
+  }
+
   getFenNotation(): string {
     return this.fenNotation(
       this.currentTurn,
