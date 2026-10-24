@@ -1,9 +1,27 @@
 import { type Request, type Response } from "express";
 import { ChessGame } from "../game/ChessGame";
-import type { Color, MoveData } from "../types/chess";
+import type { Color, MoveData, Position } from "../types/chess";
 
 // Store games in memory (with IDs as keys)
 const games: Map<string, ChessGame> = new Map();
+
+const COLORS: readonly unknown[] = ["white", "black"];
+const isColor = (value: unknown): value is Color => COLORS.includes(value);
+
+const isSquareIndex = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0 && value < 8;
+
+const isPosition = (value: unknown): value is Position =>
+  typeof value === "object" && value !== null &&
+  isSquareIndex((value as Position).row) && isSquareIndex((value as Position).col);
+
+const isMoveData = (value: unknown): value is MoveData =>
+  typeof value === "object" && value !== null &&
+  isPosition((value as MoveData).from) && isPosition((value as MoveData).to);
+
+// Query params arrive as strings, so only a single digit 0-7 is accepted.
+const toIndex = (value: unknown): number | undefined =>
+  typeof value === "string" && /^[0-7]$/.test(value) ? Number(value) : undefined;
 
 // 1. Create new game → return gameId
 export const createNewGame = (req: Request, res: Response) => {
@@ -16,22 +34,31 @@ export const createNewGame = (req: Request, res: Response) => {
 
 // 2. Make move → use gameId to find game
 export const makeMove = (req: Request, res: Response) => {
-  const { gameId, moveData, color }: {gameId: string, moveData: MoveData, color: Color} = req.body;
+  const { gameId, moveData, color } = (req.body ?? {}) as { gameId?: unknown; moveData?: unknown; color?: unknown };
+  if (typeof gameId !== "string" || !isColor(color) || !isMoveData(moveData)) {
+    return res.status(400).send("Invalid request body");
+  }
   const game = games.get(gameId);
   if (!game) return res.status(404).send("Game not found");
   
-  const success = game.makeMove(moveData, color);
-  if (!success) return res.status(400).send("Invalid move");
+  try {
+    game.makeMove(moveData, color);
+  } catch (err) {
+    return res.status(400).send(err instanceof Error ? err.message : "Invalid move");
+  }
   res.json({ boardState: game.getBoardState(), currentTurn: game.getCurrentTurn() });
 }
 
 // 3. Get legal moves → use gameId
 export const getLegalMoves = (req: Request, res: Response) => {
   const { gameId, row, col } = req.query as { gameId: string, row: string, col: string };
+  const rowIndex = toIndex(row);
+  const colIndex = toIndex(col);
+  if (rowIndex === undefined || colIndex === undefined) return res.status(400).send("Invalid row or col");
   const game = games.get(gameId);
 
   if (!game) return res.status(404).send("Game not found");
-  const legalMoves = game.getLegalMoves({row: Number(row), col: Number(col)});
+  const legalMoves = game.getLegalMoves({ row: rowIndex, col: colIndex });
   res.json({ legalMoves });
 }
 
