@@ -1,5 +1,5 @@
 - This project uses TypeScript and Vitest.
-- Test files are named `*.test.ts` and sit in folder named `__tests__`.
+- Test files are named `*.test.ts` and sit in folder named `backend/tests/`.
 - Import `describe`, `it`, `expect`, `vi` explicitly from "vitest".
 - Avoid `any`. Prefer explicit assertions over snapshots.
 - Use `it.each` for multiple input cases.

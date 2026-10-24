@@ -1,5 +1,6 @@
 {
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.5",
     "tsx": "^4.23.15",
@@ -7,8 +8,11 @@
     "vitest": "^5.0.5"
   },
   "dependencies": {
+    "cors": "^2.8.6",
     "express": "^5.3.0"
-  }, "scripts": {
-    "test": "vitest run"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "dev": "tsx backend/src/server.ts"
   }
 }
