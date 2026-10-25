@@ -1,4 +1,4 @@
-import type { GameView } from "../types";
+import type { GameView } from "../../types";
 
 const Overlay = ({ game, restart }: { game: GameView; restart: () => void }) => {
   if (game.status === "active") return null;

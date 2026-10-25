@@ -1,5 +1,5 @@
-import { boardThemes } from "../constants/boardThems";
-import PieceThemes from "../constants/pieceThems";
+import { boardThemes } from "../../constants/boardThems";
+import PieceThemes from "../../constants/pieceThems";
 
 type SelectionProps = {
   currentTurn: string;

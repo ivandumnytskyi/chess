@@ -1,7 +1,7 @@
 
-import { boardThemes } from "../constants/boardThems";
+import { boardThemes } from "../../constants/boardThems";
 import Piece from "./Piece";
-import type { Cell } from "../types"; 
+import type { Cell } from "../../types"; 
 
 type BoardProps = {
   squares: Cell[][];

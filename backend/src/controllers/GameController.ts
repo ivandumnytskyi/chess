@@ -1,9 +1,24 @@
 import { type Request, type Response } from "express";
+import type { User } from "@supabase/supabase-js";
 import { ChessGame } from "../game/ChessGame";
 import type { Color, MoveData, Position } from "../types/chess";
 
+interface StoredGame {
+  game: ChessGame;
+  ownerId: string;
+}
+
 // Store games in memory (with IDs as keys)
-const games: Map<string, ChessGame> = new Map();
+const games: Map<string, StoredGame> = new Map();
+
+const getUserId = (res: Response): string => (res.locals.user as User).id;
+
+// Returns the game only when it exists and belongs to the requesting user.
+const getOwnedGame = (gameId: unknown, userId: string): ChessGame | undefined => {
+  if (typeof gameId !== "string") return undefined;
+  const stored = games.get(gameId);
+  return stored && stored.ownerId === userId ? stored.game : undefined;
+};
 
 const COLORS: readonly unknown[] = ["white", "black"];
 const isColor = (value: unknown): value is Color => COLORS.includes(value);
@@ -27,7 +42,7 @@ const toIndex = (value: unknown): number | undefined =>
 export const createNewGame = (req: Request, res: Response) => {
   const gameId: string = crypto.randomUUID();; // uuid 
   const game = new ChessGame();
-  games.set(gameId, game);
+  games.set(gameId, { game, ownerId: getUserId(res) });
  
   res.json({ gameId, boardState: game.getBoardState(), currentTurn: game.getCurrentTurn() });
 }
@@ -38,7 +53,7 @@ export const makeMove = (req: Request, res: Response) => {
   if (typeof gameId !== "string" || !isColor(color) || !isMoveData(moveData)) {
     return res.status(400).send("Invalid request body");
   }
-  const game = games.get(gameId);
+  const game = getOwnedGame(gameId, getUserId(res));
   if (!game) return res.status(404).send("Game not found");
   
   try {
@@ -55,7 +70,7 @@ export const getLegalMoves = (req: Request, res: Response) => {
   const rowIndex = toIndex(row);
   const colIndex = toIndex(col);
   if (rowIndex === undefined || colIndex === undefined) return res.status(400).send("Invalid row or col");
-  const game = games.get(gameId);
+  const game = getOwnedGame(gameId, getUserId(res));
 
   if (!game) return res.status(404).send("Game not found");
   const legalMoves = game.getLegalMoves({ row: rowIndex, col: colIndex });
@@ -65,7 +80,7 @@ export const getLegalMoves = (req: Request, res: Response) => {
 // 4. Get game status → use gameId
 export const getGameStatus = (req: Request, res: Response) => {
   const { gameId } = req.query as { gameId: string };
-  const game = games.get(gameId);
+  const game = getOwnedGame(gameId, getUserId(res));
 
   if (!game) return res.status(404).send("Game not found");
   res.json({ status: game.getGameStatus(), currentTurn: game.getCurrentTurn(), boardState: game.getBoardState() });
@@ -74,7 +89,7 @@ export const getGameStatus = (req: Request, res: Response) => {
 // 5. Get board state → use gameId
 export const getBoardState = (req: Request, res: Response) => {
   const { gameId } = req.query as { gameId: string };
-  const game = games.get(gameId);
+  const game = getOwnedGame(gameId, getUserId(res));
 
   if (!game) return res.status(404).send("Game not found");
   res.json({ boardState: game.getBoardState(), currentTurn: game.getCurrentTurn() });
