@@ -1,0 +1,36 @@
+import Selection from "./Selection";
+import Overlay from "./Overlay";
+import { signOut } from "../../lib/auth";
+
+type SettingsProps = {
+  onClose: () => void;
+};
+
+const Settings = ({ onClose }: SettingsProps) => {
+  const handleLogOut = async () => {
+    await signOut();
+    onClose();
+  };
+
+  return (
+    <>
+      <Overlay onClick={() => onClose()} />
+      <div
+        className="absolute flex flex-col rounded-lg items-center justify-center 
+      text-white text-2xl z-300 bg-black top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+      px-4 py-4"
+      >
+        <p>Settings</p>
+        <Selection />
+        <button
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg"
+          onClick={() => handleLogOut()}
+        >
+          Log Out
+        </button>
+      </div>
+    </>
+  );
+};
+
+export default Settings;

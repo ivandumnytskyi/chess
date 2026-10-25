@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { signUp, signInWithGoogle } from "../lib/auth";
+import Header from '../components/Sheared/Header';
 
 const Signup = () => {
   const [email, setEmail] = useState("");
@@ -17,10 +18,13 @@ const Signup = () => {
   }
   }
   return (
+    <>
+    <Header />    
     <div
       className="flex flex-col gap-4 items-center justify-center p-4 
     absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#000000]"
     >
+     
       <h1>Sign up</h1>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full">
@@ -56,6 +60,7 @@ const Signup = () => {
         Have an account? <Link to="/login">Log in</Link>
       </p>
     </div>
+  </>
   );
 };
 

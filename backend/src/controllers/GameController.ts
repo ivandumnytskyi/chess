@@ -34,10 +34,6 @@ const isMoveData = (value: unknown): value is MoveData =>
   typeof value === "object" && value !== null &&
   isPosition((value as MoveData).from) && isPosition((value as MoveData).to);
 
-// Query params arrive as strings, so only a single digit 0-7 is accepted.
-const toIndex = (value: unknown): number | undefined =>
-  typeof value === "string" && /^[0-7]$/.test(value) ? Number(value) : undefined;
-
 // 1. Create new game → return gameId
 export const createNewGame = (req: Request, res: Response) => {
   const gameId: string = crypto.randomUUID();; // uuid 
@@ -61,36 +57,19 @@ export const makeMove = (req: Request, res: Response) => {
   } catch (err) {
     return res.status(400).send(err instanceof Error ? err.message : "Invalid move");
   }
-  res.json({ boardState: game.getBoardState(), currentTurn: game.getCurrentTurn() });
+  res.json({
+    boardState: game.getBoardState(),
+    currentTurn: game.getCurrentTurn(),
+    status: game.getGameStatus(),
+    legalMoves: game.getLegalMovesForTurn(),
+  });
 }
 
-// 3. Get legal moves → use gameId
-export const getLegalMoves = (req: Request, res: Response) => {
-  const { gameId, row, col } = req.query as { gameId: string, row: string, col: string };
-  const rowIndex = toIndex(row);
-  const colIndex = toIndex(col);
-  if (rowIndex === undefined || colIndex === undefined) return res.status(400).send("Invalid row or col");
-  const game = getOwnedGame(gameId, getUserId(res));
-
-  if (!game) return res.status(404).send("Game not found");
-  const legalMoves = game.getLegalMoves({ row: rowIndex, col: colIndex });
-  res.json({ legalMoves });
-}
-
-// 4. Get game status → use gameId
-export const getGameStatus = (req: Request, res: Response) => {
+// 3. Get legal moves for every piece of the side to move → use gameId
+export const getAllLegalMoves = (req: Request, res: Response) => {
   const { gameId } = req.query as { gameId: string };
   const game = getOwnedGame(gameId, getUserId(res));
 
   if (!game) return res.status(404).send("Game not found");
-  res.json({ status: game.getGameStatus(), currentTurn: game.getCurrentTurn(), boardState: game.getBoardState() });
-}
-
-// 5. Get board state → use gameId
-export const getBoardState = (req: Request, res: Response) => {
-  const { gameId } = req.query as { gameId: string };
-  const game = getOwnedGame(gameId, getUserId(res));
-
-  if (!game) return res.status(404).send("Game not found");
-  res.json({ boardState: game.getBoardState(), currentTurn: game.getCurrentTurn() });
+  res.json({ legalMoves: game.getLegalMovesForTurn() });
 }

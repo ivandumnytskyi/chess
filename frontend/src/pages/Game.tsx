@@ -1,30 +1,11 @@
 import { useEffect, useState } from "react";
 import type { GameView, Cell, Color, GameStatus, MoveData, Position } from "../types";
+import { useTheme } from "../context/ThemeContext";
 import Board from "../components/Game/Board";
-import Overlay from "../components/Game/Overlay";
-import Selection from "../components/Game/Selection";
-import { supabase } from "../lib/supabase";
+import GameOverlay from "../components/Game/GameOverlay";
+import { authorizedFetch } from "../lib/authorization";
 
 const API_URL = "http://localhost:3000/api";
-
-// Attaches the signed-in user's access token. Sends the user to /login when there is no valid session.
-async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) {
-    window.location.href = "/login";
-    throw new Error("Not signed in");
-  }
-
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(url, { ...init, headers });
-  if (res.status === 401) {
-    window.location.href = "/login";
-    throw new Error("Session expired");
-  }
-  return res;
-}
 
 async function createGame(): Promise<GameView> {
   const res = await authorizedFetch(`${API_URL}/game`, { method: "POST" });
@@ -32,24 +13,35 @@ async function createGame(): Promise<GameView> {
   return { gameId: data.gameId, squares: data.boardState.squares, currentTurn: data.currentTurn, status: "active" };
 }
 
-async function fetchStatus(gameId: string): Promise<GameStatus> {
-  const res = await authorizedFetch(`${API_URL}/game?gameId=${gameId}`);
-  const data: { status: GameStatus } = await res.json();
-  return data.status;
+const pieceKey = (position: Position) => `${position.row}-${position.col}`;
+
+type PieceMoves = { from: Position; moves: Position[] };
+
+const toMovesByPiece = (entries: PieceMoves[]): Record<string, Position[]> =>
+  Object.fromEntries(entries.map(({ from, moves }) => [pieceKey(from), moves]));
+
+async function fetchAllLegalMoves(gameId: string): Promise<Record<string, Position[]>> {
+  const res = await authorizedFetch(`${API_URL}/game/all-legal-moves?gameId=${gameId}`);
+  const data: { legalMoves: PieceMoves[] } = await res.json();
+  return toMovesByPiece(data.legalMoves);
 }
 
 function Game() {
-  const [themeIndex, setThemeIndex] = useState(0);
+  const { themeIndex, pieceTheme } = useTheme();
+  
   const [selectedPiece, setSelectedPiece] = useState<Position | null>(null);
   const [game, setGame] = useState<GameView | null>(null);
-  const [legalMoves, setLegalMoves] = useState<Position[]>([]);
-  const [pieceTheme, setPieceTheme] = useState("staunty");
+  const [movesByPiece, setMovesByPiece] = useState<Record<string, Position[]>>({});
   const [error, setError] = useState<string | null>(null);
+
+  const legalMoves = selectedPiece ? movesByPiece[pieceKey(selectedPiece)] ?? [] : [];
 
   useEffect(() => {
     const load = async () => {
       try {
-        setGame(await createGame());
+        const newGame = await createGame();
+        setGame(newGame);
+        setMovesByPiece(await fetchAllLegalMoves(newGame.gameId));
       } catch {
         setError("Could not reach the server");
       }
@@ -61,9 +53,10 @@ function Game() {
 
   const restart = async () => {
     try {
-      setGame(await createGame());
+      const newGame = await createGame();
+      setGame(newGame);
       setSelectedPiece(null);
-      setLegalMoves([]);
+      setMovesByPiece(await fetchAllLegalMoves(newGame.gameId));
     } catch {
       setError("Could not reach the server");
     }
@@ -87,45 +80,36 @@ function Game() {
           setError(await res.text());
           return;
         }
-        const data: { boardState: { squares: Cell[][] }; currentTurn: Color } = await res.json();
-        const status = await fetchStatus(game.gameId);
-        setGame({ ...game, squares: data.boardState.squares, currentTurn: data.currentTurn, status });
+        const data: {
+          boardState: { squares: Cell[][] };
+          currentTurn: Color;
+          status: GameStatus;
+          legalMoves: PieceMoves[];
+        } = await res.json();
+        setGame({ ...game, squares: data.boardState.squares, currentTurn: data.currentTurn, status: data.status });
+        setMovesByPiece(toMovesByPiece(data.legalMoves));
         setSelectedPiece(null);
-        setLegalMoves([]);
         return;
       }
 
       const piece = game.squares[row][col];
       if (!piece || piece.color !== game.currentTurn) {
         setSelectedPiece(null);
-        setLegalMoves([]);
         return;
       }
       setError(null);
       setSelectedPiece(clicked);
-      const res = await authorizedFetch(`${API_URL}/game/legal-moves?gameId=${game.gameId}&row=${row}&col=${col}`);
-      const data: { legalMoves: Position[] } = await res.json();
-      setLegalMoves(data.legalMoves);
     } catch {
       setError("Could not reach the server");
     }
   };
   return (
     <>
-      {game && (
-        <Selection
-          currentTurn={game.currentTurn}
-          themeIndex={themeIndex}
-          setThemeIndex={setThemeIndex}
-          pieceTheme={pieceTheme}
-          setPieceTheme={setPieceTheme}
-        />
-      )}
       {error && <p className="absolute top-2 left-1/2 -translate-x-1/2 text-red-600">{error}</p>}
-      <div className="grid grid-rows-8 gap-0 aspect-square h-[90%] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 absolute">
+      <div className="grid grid-rows-8 gap-0 size-[min(100vw,90vh)] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 absolute">
         {game && game.status !== "active" &&
           game.status !== "check" && (
-            <Overlay game={game} restart={restart} />
+            <GameOverlay game={game} restart={restart} />
           )}
         {game && (
           <Board

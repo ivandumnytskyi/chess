@@ -41,6 +41,20 @@ export class ChessGame {
     );
   }
 
+  getLegalMovesForTurn(): { from: Position; moves: Position[] }[] {
+    const result: { from: Position; moves: Position[] }[] = [];
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const from = { row, col };
+        const piece = this.board.getPiece(from);
+        if (!piece || piece.color !== this.currentTurn) continue;
+        const moves = this.getLegalMoves(from);
+        if (moves.length > 0) result.push({ from, moves });
+      }
+    }
+    return result;
+  }
+
   getLegalMoves(from: Position): Position[] {
     const piece = this.board.getPiece(from);
     if (!piece) return [];

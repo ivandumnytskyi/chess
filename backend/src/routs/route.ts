@@ -1,8 +1,5 @@
 import { Router } from "express";
-import { 
-  createNewGame, makeMove, getLegalMoves, 
-  getGameStatus 
-} from "../controllers/GameController";
+import { createNewGame, makeMove, getAllLegalMoves } from "../controllers/GameController";
 import { requireAuth } from "../../middleware/requireAuth";
 
 
@@ -17,12 +14,11 @@ router.get("/auth", requireAuth, (req, res) => {
   });
 });
 
-router.get("/game", requireAuth, getGameStatus);
 router.post("/game", requireAuth, createNewGame);
 
 router.post("/game/move", requireAuth, makeMove);
 
-router.get("/game/legal-moves", requireAuth, getLegalMoves);
+router.get("/game/all-legal-moves", requireAuth, getAllLegalMoves);
 
 router.get('/health', (req, res) => {
   res.send('OK');

@@ -1,6 +1,7 @@
 import type { GameView } from "../../types";
+import Overlay from "../Sheared/Overlay";
 
-const Overlay = ({ game, restart }: { game: GameView; restart: () => void }) => {
+const GameOverlay = ({ game, restart }: { game: GameView; restart: () => void }) => {
   if (game.status === "active") return null;
 
   const message =
@@ -12,7 +13,7 @@ const Overlay = ({ game, restart }: { game: GameView; restart: () => void }) => 
 
   return (
     <>
-      <div className="w-full h-full absolute bg-black z-200 opacity-40"></div>
+      <Overlay />
       <div className="absolute flex flex-col rounded-lg items-center justify-center text-white text-2xl z-300 w-[40%] h-[30%] bg-black top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
         <p>{message}</p>
         <button
@@ -26,4 +27,4 @@ const Overlay = ({ game, restart }: { game: GameView; restart: () => void }) => 
   );
 };
 
-export default Overlay;
+export default GameOverlay;

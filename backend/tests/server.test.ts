@@ -130,25 +130,6 @@ describe("POST /api/game", () => {
   });
 });
 
-describe("GET /api/game", () => {
-  it("returns status for an existing game", async () => {
-    const { gameId } = await createGame();
-
-    const res = await fetch(`${baseUrl}/game?gameId=${gameId}`);
-    const body = (await res.json()) as { status: unknown; currentTurn: string };
-
-    expect(res.status).toBe(200);
-    expect(body.status).toBeDefined();
-    expect(body.currentTurn).toBe("white");
-  });
-
-  it("returns 404 for an unknown game", async () => {
-    const res = await fetch(`${baseUrl}/game?gameId=missing`);
-
-    expect(res.status).toBe(404);
-  });
-});
-
 describe("POST /api/game/move", () => {
   it("applies a legal move and switches turn", async () => {
     const { gameId } = await createGame();
@@ -158,6 +139,18 @@ describe("POST /api/game/move", () => {
 
     expect(res.status).toBe(200);
     expect(body.currentTurn).toBe("black");
+  });
+
+  it("returns the new status and legal moves for the side to move", async () => {
+    const { gameId } = await createGame();
+
+    const res = await postMove({ gameId, moveData: e2e4, color: "white" });
+    const body = (await res.json()) as { status: string; legalMoves: { from: unknown; moves: unknown[] }[] };
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("active");
+    expect(body.legalMoves.length).toBeGreaterThan(0);
+    expect(body.legalMoves.every((entry) => entry.moves.length > 0)).toBe(true);
   });
 
   it("rejects a move made out of turn", async () => {
@@ -196,41 +189,21 @@ describe("POST /api/game/move", () => {
   });
 });
 
-describe("GET /api/game/legal-moves", () => {
-  it("returns two moves for a starting pawn", async () => {
+describe("GET /api/game/all-legal-moves", () => {
+  it("returns moves for every white piece that can move at the start", async () => {
     const { gameId } = await createGame();
 
-    const res = await fetch(`${baseUrl}/game/legal-moves?gameId=${gameId}&row=6&col=4`);
-    const body = (await res.json()) as { legalMoves: unknown[] };
+    const res = await fetch(`${baseUrl}/game/all-legal-moves?gameId=${gameId}`);
+    const body = (await res.json()) as { legalMoves: { from: { row: number; col: number }; moves: unknown[] }[] };
 
     expect(res.status).toBe(200);
-    expect(body.legalMoves).toHaveLength(2);
-  });
-
-  it("returns no moves for a blocked piece", async () => {
-    const { gameId } = await createGame();
-
-    const res = await fetch(`${baseUrl}/game/legal-moves?gameId=${gameId}&row=7&col=0`);
-    const body = (await res.json()) as { legalMoves: unknown[] };
-
-    expect(body.legalMoves).toHaveLength(0);
-  });
-
-  it.each([
-    ["row=8&col=0"],
-    ["row=-1&col=0"],
-    ["row=a&col=0"],
-    ["row=1"],
-  ])("returns 400 for invalid coordinates (%s)", async (query) => {
-    const { gameId } = await createGame();
-
-    const res = await fetch(`${baseUrl}/game/legal-moves?gameId=${gameId}&${query}`);
-
-    expect(res.status).toBe(400);
+    expect(body.legalMoves).toHaveLength(10);
+    const pawnE2 = body.legalMoves.find((entry) => entry.from.row === 6 && entry.from.col === 4);
+    expect(pawnE2?.moves).toHaveLength(2);
   });
 
   it("returns 404 for an unknown game", async () => {
-    const res = await fetch(`${baseUrl}/game/legal-moves?gameId=missing&row=6&col=4`);
+    const res = await fetch(`${baseUrl}/game/all-legal-moves?gameId=missing`);
 
     expect(res.status).toBe(404);
   });
@@ -238,10 +211,9 @@ describe("GET /api/game/legal-moves", () => {
 
 describe("authentication", () => {
   it.each([
-    ["GET /api/game", () => fetch(`${baseUrl}/game?gameId=x`, { headers: {} })],
+    ["GET /api/game/all-legal-moves", () => fetch(`${baseUrl}/game/all-legal-moves?gameId=x`, { headers: {} })],
     ["POST /api/game", () => fetch(`${baseUrl}/game`, { method: "POST", headers: {} })],
     ["POST /api/game/move", () => postMove({ gameId: "x", moveData: e2e4, color: "white" }, "")],
-    ["GET /api/game/legal-moves", () => fetch(`${baseUrl}/game/legal-moves?gameId=x&row=6&col=4`, { headers: {} })],
   ])("returns 401 without a bearer token: %s", async (_name, call) => {
     const res = await call();
 
@@ -265,11 +237,9 @@ describe("game ownership", () => {
   it("lets the owner read, move and query their game", async () => {
     const { gameId } = await createGame("token-a");
 
-    const status = await fetch(`${baseUrl}/game?gameId=${gameId}`);
-    const legal = await fetch(`${baseUrl}/game/legal-moves?gameId=${gameId}&row=6&col=4`);
+    const legal = await fetch(`${baseUrl}/game/all-legal-moves?gameId=${gameId}`);
     const move = await postMove({ gameId, moveData: e2e4, color: "white" }, "token-a");
 
-    expect(status.status).toBe(200);
     expect(legal.status).toBe(200);
     expect(move.status).toBe(200);
   });
@@ -277,11 +247,9 @@ describe("game ownership", () => {
   it("hides another user's game as not found", async () => {
     const { gameId } = await createGame("token-a");
 
-    const status = await fetch(`${baseUrl}/game?gameId=${gameId}`, { headers: bearer("token-b") });
-    const legal = await fetch(`${baseUrl}/game/legal-moves?gameId=${gameId}&row=6&col=4`, { headers: bearer("token-b") });
+    const legal = await fetch(`${baseUrl}/game/all-legal-moves?gameId=${gameId}`, { headers: bearer("token-b") });
     const move = await postMove({ gameId, moveData: e2e4, color: "white" }, "token-b");
 
-    expect(status.status).toBe(404);
     expect(legal.status).toBe(404);
     expect(move.status).toBe(404);
   });
@@ -290,9 +258,11 @@ describe("game ownership", () => {
     const { gameId } = await createGame("token-a");
 
     await postMove({ gameId, moveData: e2e4, color: "white" }, "token-b");
-    const status = await fetch(`${baseUrl}/game?gameId=${gameId}`);
-    const body = (await status.json()) as { currentTurn: string };
+    const legal = await fetch(`${baseUrl}/game/all-legal-moves?gameId=${gameId}`);
+    const body = (await legal.json()) as { legalMoves: { from: { row: number } }[] };
 
-    expect(body.currentTurn).toBe("white");
+    expect(body.legalMoves.every((entry) => entry.from.row === 6 || entry.from.row === 7)).toBe(true);
+    expect(body.legalMoves).toHaveLength(10);
   });
 });
+

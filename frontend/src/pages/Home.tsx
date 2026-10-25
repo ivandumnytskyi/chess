@@ -1,7 +1,18 @@
-const Home = () => {
+import { useState } from 'react';
+import Header from '../components/Sheared/Header';
+import Settings from '../components/Sheared/Settings';
+
+const Home = () => {  
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   return (
     <div>
-      <h1>Welcome to Chess Pet project</h1>
+      <Header onSettingsClick={() => setIsSettingsOpen(true)} />
+      {isSettingsOpen && (
+        <Settings
+          onClose={() => setIsSettingsOpen(false)}
+        />
+      )}
     </div>
   );
 };
