@@ -6,11 +6,12 @@
     "rootDir": "./backend",
     "outDir": "./dist",
 
+    "types": ["node"],
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["backend/src/**/*.ts", "backend/tests/ChessGame.test.ts"],
+  "include": ["backend/src/**/*.ts", "backend/lib/**/*.ts", "backend/prisma.config.ts", "backend/tests/ChessGame.test.ts"],
   "exclude": ["node_modules", "dist"]
 }
