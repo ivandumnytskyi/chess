@@ -11,7 +11,11 @@ const Signup = () => {
     e.preventDefault();
 
   try {
-    await signUp(email, password);
+    const result = await signUp(email, password);
+    if (result.confirmationRequired) {
+      alert("Check your email to confirm your account.");
+      return;
+    }
     window.location.href = "/";
   } catch (error) {
     alert(error instanceof Error ? error.message : "Sign up failed");

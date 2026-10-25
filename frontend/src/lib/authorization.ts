@@ -1,45 +1,51 @@
 import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
-import { supabase } from "./supabase";
 
-export async function getAccessToken(): Promise<string | null> {
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
+export const API_URL = "http://localhost:3000/api";
+
+const AUTH_CHANGED_EVENT = "auth-changed";
+
+// Tells mounted components (such as the header) that the session changed.
+export function notifyAuthChanged(): void {
+  window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
 }
 
-function redirectToLogin(): void {
-  window.location.href = "/login";
-}
-
-// Sends the signed-in user's access token. Redirects to /login when there is no valid session.
+// Sends the HttpOnly session cookies. Redirects to /login when the session is missing or expired.
 export async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const token = await getAccessToken();
-  if (!token) {
-    redirectToLogin();
-    throw new Error("Not signed in");
-  }
-
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(url, { ...init, headers });
+  const res = await fetch(url, { ...init, credentials: "include" });
   if (res.status === 401) {
-    redirectToLogin();
+    window.location.href = "/login";
     throw new Error("Session expired");
   }
   return res;
 }
 
-// Returns null while the session is still being restored, otherwise whether a user is signed in.
+async function checkAuthenticated(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/auth`, { credentials: "include" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Returns null while the session is still being checked, otherwise whether a user is signed in.
 export function useIsAuthenticated(): boolean | null {
-  const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-    });
-    return () => data.subscription.unsubscribe();
+    let active = true;
+    const check = async () => {
+      const result = await checkAuthenticated();
+      if (active) setIsAuthenticated(result);
+    };
+
+    check();
+    window.addEventListener(AUTH_CHANGED_EVENT, check);
+    return () => {
+      active = false;
+      window.removeEventListener(AUTH_CHANGED_EVENT, check);
+    };
   }, []);
 
-  if (session === undefined) return null;
-  return session !== null;
+  return isAuthenticated;
 }

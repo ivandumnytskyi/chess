@@ -3,6 +3,7 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Game from "./pages/Game";
+import AuthCallback from "./pages/AuthCallback";
 import ThemeProvider from "./context/ThemeProvider.tsx";
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/game" element={<Game />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>
