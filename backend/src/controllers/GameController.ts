@@ -45,7 +45,7 @@ const loadOwnedGame = async (gameId: unknown, userId: string): Promise<LoadedGam
   for (const stored of row.moves) {
     const move: unknown = stored.move;
     if (!isMoveData(move)) throw new Error(`Stored move ${stored.ply} of game ${row.id} is invalid`);
-    game.makeMove({ from: move.from, to: move.to }, stored.color);
+    game.makeMove({ from: move.from, to: move.to }, stored.color, move.promotion);
   }
 
   return { row, game, moveCount: row.moves.length };
@@ -74,9 +74,12 @@ const isPosition = (value: unknown): value is Position =>
   typeof value === "object" && value !== null &&
   isSquareIndex((value as Position).row) && isSquareIndex((value as Position).col);
 
+const PROMOTION_PIECES: readonly unknown[] = ["queen", "rook", "bishop", "knight"];
+
 const isMoveData = (value: unknown): value is MoveData =>
   typeof value === "object" && value !== null &&
-  isPosition((value as MoveData).from) && isPosition((value as MoveData).to);
+  isPosition((value as MoveData).from) && isPosition((value as MoveData).to) &&
+  ((value as MoveData).promotion === undefined || PROMOTION_PIECES.includes((value as MoveData).promotion));
 
 // 1. Create new game → return gameId
 export const createNewGame = async (req: Request, res: Response) => {
@@ -129,7 +132,7 @@ export const makeMove = async (req: Request, res: Response) => {
   }
 
   try {
-    game.makeMove(moveData, color);
+    game.makeMove(moveData, color, moveData.promotion);
   } catch (err) {
     return res.status(400).send(err instanceof Error ? err.message : "Invalid move");
   }
@@ -142,7 +145,11 @@ export const makeMove = async (req: Request, res: Response) => {
         gameId: row.id,
         ply: moveCount + 1,
         color,
-        move: { from: moveData.from, to: moveData.to } as Prisma.InputJsonValue,
+        move: {
+          from: moveData.from,
+          to: moveData.to,
+          ...(moveData.promotion ? { promotion: moveData.promotion } : {}),
+        } as Prisma.InputJsonValue,
       },
     }),
     prisma.game.update({

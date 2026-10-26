@@ -286,6 +286,88 @@ describe("POST /api/game/move", () => {
   });
 });
 
+type MoveResponse = { currentTurn: string; boardState: { squares: ({ pieceType: string; color: string } | null)[][] } };
+
+const sq = (row: number, col: number) => ({ row, col });
+
+// White's a-pawn walks to a6, takes on b7, and then takes the rook on a8 to promote.
+const PATH_TO_PROMOTION = [
+  { color: "white", from: sq(6, 0), to: sq(4, 0) },
+  { color: "black", from: sq(1, 7), to: sq(3, 7) },
+  { color: "white", from: sq(4, 0), to: sq(3, 0) },
+  { color: "black", from: sq(3, 7), to: sq(4, 7) },
+  { color: "white", from: sq(3, 0), to: sq(2, 0) },
+  { color: "black", from: sq(4, 7), to: sq(5, 7) },
+  { color: "white", from: sq(2, 0), to: sq(1, 1) },
+  { color: "black", from: sq(1, 6), to: sq(3, 6) },
+] as const;
+
+const promotionMove = { from: sq(1, 1), to: sq(0, 0) };
+
+async function gameReadyForPromotion(): Promise<string> {
+  const { gameId } = await createGame();
+  for (const step of PATH_TO_PROMOTION) {
+    const res = await postMove({ gameId, moveData: { from: step.from, to: step.to }, color: step.color });
+    expect(res.status).toBe(200);
+  }
+  return gameId;
+}
+
+describe("pawn promotion", () => {
+  it.each(["queen", "rook", "bishop", "knight"])("promotes to a %s when chosen", async (promotion) => {
+    const gameId = await gameReadyForPromotion();
+
+    const res = await postMove({ gameId, moveData: { ...promotionMove, promotion }, color: "white" });
+    const body = (await res.json()) as MoveResponse;
+
+    expect(res.status).toBe(200);
+    expect(body.boardState.squares[0][0]).toMatchObject({ pieceType: promotion, color: "white" });
+  });
+
+  it("stores the chosen piece with the move", async () => {
+    const gameId = await gameReadyForPromotion();
+
+    await postMove({ gameId, moveData: { ...promotionMove, promotion: "queen" }, color: "white" });
+
+    expect(fakeGames.get(gameId)?.moves.at(-1)?.move).toEqual({ ...promotionMove, promotion: "queen" });
+  });
+
+  it("replays the promotion when the game is loaded again", async () => {
+    const gameId = await gameReadyForPromotion();
+    await postMove({ gameId, moveData: { ...promotionMove, promotion: "knight" }, color: "white" });
+
+    const res = await postMove({ gameId, moveData: { from: sq(3, 6), to: sq(4, 6) }, color: "black" });
+    const body = (await res.json()) as MoveResponse;
+
+    expect(res.status).toBe(200);
+    expect(body.boardState.squares[0][0]).toMatchObject({ pieceType: "knight", color: "white" });
+  });
+
+  it("rejects a promoting move without a piece", async () => {
+    const gameId = await gameReadyForPromotion();
+
+    const res = await postMove({ gameId, moveData: promotionMove, color: "white" });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a piece on a move that does not promote", async () => {
+    const { gameId } = await createGame();
+
+    const res = await postMove({ gameId, moveData: { ...e2e4, promotion: "queen" }, color: "white" });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a promotion piece that is not a valid choice", async () => {
+    const gameId = await gameReadyForPromotion();
+
+    const res = await postMove({ gameId, moveData: { ...promotionMove, promotion: "king" }, color: "white" });
+
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("GET /api/game/all-legal-moves", () => {
   it("returns moves for every white piece that can move at the start", async () => {
     const { gameId } = await createGame();

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { GameView, Cell, Color, ClockState, GameStatus, MoveData, Position } from "../types";
+import type { GameView, Cell, Color, ClockState, GameStatus, MoveData, Position, PromotionPiece } from "../types";
 import { useTheme } from "../context/ThemeContext";
 import Board from "../components/Game/Board";
 import GameOverlay from "../components/Game/GameOverlay";
 import Clock from "../components/Game/Clock";
+import Promotion from "../components/Game/Promotion";
 import TimeControlPicker from "../components/Game/TimeControlPicker";
 import { authorizedFetch } from "../lib/authorization";
 import { DEFAULT_TIME_CONTROL, type TimeControlId } from "../constants/timeControls";
@@ -74,6 +75,7 @@ function Game() {
   const [clock, setClock] = useState<ClockState | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [lastMove, setLastMove] = useState<{ from: Position; to: Position; id: number } | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: Position; to: Position } | null>(null);
 
   const legalMoves = selectedPiece ? movesByPiece[pieceKey(selectedPiece)] ?? [] : [];
   const serverOver = game ? Boolean(game.winner) || (game.status !== "active" && game.status !== "check") : false;
@@ -212,14 +214,35 @@ function Game() {
     }
   };
 
+  const choosePromotion = async (piece: PromotionPiece) => {
+    if (!pendingPromotion || !game || moveInFlight.current) return;
+    const { from, to } = pendingPromotion;
+    const color = game.squares[from.row][from.col]?.color;
+    setPendingPromotion(null);
+    setSelectedPiece(null);
+    if (!color) return;
+    const snapshot: BoardSnapshot = { game, clock, movesByPiece, lastMove };
+    await sendMove(snapshot, { from, to, promotion: piece }, color, false);
+  };
+
   const handleSquareClick = async (row: number, col: number) => {
     if (!game || isOver || moveInFlight.current) return;
     const clicked: Position = { row, col };
+
+    if (pendingPromotion) {
+      setPendingPromotion(null);
+      setSelectedPiece(null);
+      return;
+    }
 
     try {
       if (selectedPiece && legalMoves.some((m) => m.row === row && m.col === col)) {
         const color = game.squares[selectedPiece.row][selectedPiece.col]?.color;
         if (!color) return;
+        if (game.squares[selectedPiece.row][selectedPiece.col]?.pieceType === "pawn" && (row === 0 || row === 7)) {
+          setPendingPromotion({ from: selectedPiece, to: clicked });
+          return;
+        }
         const snapshot: BoardSnapshot = { game, clock, movesByPiece, lastMove };
         const simple = isSimpleMove(game.squares, selectedPiece, clicked);
         if (simple) applyMoveLocally(selectedPiece, clicked);
@@ -257,6 +280,14 @@ function Game() {
               pieceTheme={pieceTheme}
               lastMove={lastMove}
             />
+            {pendingPromotion && (
+              <Promotion
+                color={game.currentTurn}
+                theme={pieceTheme}
+                column={pendingPromotion.to.col}
+                onSelect={choosePromotion}
+              />
+            )}
           </div>
           <Clock color="white" remainingMs={remainingFor("white")} active={!isOver && game.currentTurn === "white"} />
         </div>

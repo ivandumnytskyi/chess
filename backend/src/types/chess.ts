@@ -12,9 +12,12 @@ export type Position = {
   col: number;
 };
 
+export type PromotionPiece = "queen" | "rook" | "bishop" | "knight";
+
 export type MoveData = {
   from: Position;
   to: Position;
+  promotion?: PromotionPiece;
 };
 
 export type PieceType =
