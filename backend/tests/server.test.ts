@@ -5,13 +5,78 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import router from "../src/routs/route";
 
-const { mockGetUser, mockRefreshSession, mockSignIn, mockSignUp, mockProfileUpsert } = vi.hoisted(() => ({
-  mockGetUser: vi.fn(),
-  mockRefreshSession: vi.fn(),
-  mockSignIn: vi.fn(),
-  mockSignUp: vi.fn(),
-  mockProfileUpsert: vi.fn(),
-}));
+const {
+  mockGetUser,
+  mockRefreshSession,
+  mockSignIn,
+  mockSignUp,
+  mockProfileUpsert,
+  mockGameCreate,
+  mockGameFindFirst,
+  mockGameUpdate,
+  mockMoveCreate,
+  mockTransaction,
+  fakeGames,
+} = vi.hoisted(() => {
+  // In-memory stand-in for the games table, so the controller runs against real logic.
+  type FakeMove = { gameId: string; ply: number; color: string; move: unknown; playedAt: Date };
+  type FakeGame = Record<string, unknown> & { id: string; moves: FakeMove[] };
+  const fakeGames = new Map<string, FakeGame>();
+
+  const mockGameCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    const row: FakeGame = {
+      id: crypto.randomUUID(),
+      whitePlayerId: null,
+      blackPlayerId: null,
+      status: "active",
+      result: null,
+      endReason: null,
+      currentTurn: "white",
+      createdAt: new Date(),
+      finishedAt: null,
+      lastMoveAt: null,
+      moves: [],
+      ...data,
+    };
+    fakeGames.set(row.id, row);
+    return row;
+  });
+  const mockGameFindFirst = vi.fn(async ({ where }: { where: { id: string; OR: Record<string, unknown>[] } }) => {
+    const row = fakeGames.get(where.id);
+    if (!row || !where.OR.some((clause) => Object.entries(clause).every(([key, value]) => row[key] === value))) {
+      return null;
+    }
+    return { ...row, moves: [...row.moves].sort((a, b) => a.ply - b.ply) };
+  });
+  const mockGameUpdate = vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+    const row = fakeGames.get(where.id);
+    if (!row) throw new Error("Record not found");
+    Object.assign(row, data);
+    return row;
+  });
+  const mockMoveCreate = vi.fn(async ({ data }: { data: Omit<FakeMove, "playedAt"> }) => {
+    const row = fakeGames.get(data.gameId);
+    if (!row) throw new Error("Record not found");
+    const move = { ...data, playedAt: new Date() };
+    row.moves.push(move);
+    return move;
+  });
+  const mockTransaction = vi.fn(async (operations: Promise<unknown>[]) => Promise.all(operations));
+
+  return {
+    mockGetUser: vi.fn(),
+    mockRefreshSession: vi.fn(),
+    mockSignIn: vi.fn(),
+    mockSignUp: vi.fn(),
+    mockProfileUpsert: vi.fn(),
+    mockGameCreate,
+    mockGameFindFirst,
+    mockGameUpdate,
+    mockMoveCreate,
+    mockTransaction,
+    fakeGames,
+  };
+});
 vi.mock("../lib/supabase", () => ({
   supabase: {
     auth: {
@@ -25,12 +90,17 @@ vi.mock("../lib/supabase", () => ({
 vi.mock("../lib/prisma", () => ({
   prisma: {
     profile: { upsert: mockProfileUpsert },
+    game: { create: mockGameCreate, findFirst: mockGameFindFirst, update: mockGameUpdate },
+    move: { create: mockMoveCreate },
+    $transaction: mockTransaction,
   },
 }));
 
 const USERS: Record<string, { id: string; email: string }> = {
   "token-a": { id: "user-a", email: "a@example.com" },
   "token-b": { id: "user-b", email: "b@example.com" },
+  "token-c": { id: "user-c", email: "c@example.com" },
+  "token-d": { id: "user-d", email: "d@example.com" },
 };
 
 beforeEach(() => {
@@ -42,6 +112,7 @@ beforeEach(() => {
   });
   mockRefreshSession.mockResolvedValue({ data: { user: null, session: null }, error: { message: "invalid refresh token" } });
   mockProfileUpsert.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id }));
+  fakeGames.clear();
 });
 
 const app = express();
@@ -346,14 +417,26 @@ describe("session cookies", () => {
   });
 
   it("creates the profile for an authenticated user on first request", async () => {
-    const res = await request("GET", "/api/auth", undefined, { cookie: "access_token=token-a" });
+    mockProfileUpsert.mockClear();
+
+    const res = await request("GET", "/api/auth", undefined, { cookie: "access_token=token-c" });
 
     expect(res.status).toBe(200);
     expect(mockProfileUpsert).toHaveBeenCalledWith({
-      where: { id: "user-a" },
+      where: { id: "user-c" },
       update: {},
-      create: { id: "user-a" },
+      create: { id: "user-c" },
     });
+  });
+
+  it("skips the profile upsert on later requests from the same user", async () => {
+    mockProfileUpsert.mockClear();
+    await request("GET", "/api/auth", undefined, { cookie: "access_token=token-d" });
+
+    const res = await request("GET", "/api/auth", undefined, { cookie: "access_token=token-d" });
+
+    expect(res.status).toBe(200);
+    expect(mockProfileUpsert).toHaveBeenCalledTimes(1);
   });
 
   it("clears the cookies and returns 401 when the session cannot be refreshed", async () => {

@@ -3,6 +3,9 @@ import { supabase } from "../lib/supabase";
 import { prisma } from "../lib/prisma";
 import { ACCESS_COOKIE, REFRESH_COOKIE, clearSessionCookies, setSessionCookies } from "../lib/sessionCookies";
 
+// Profiles are never deleted, so once one exists for a user it is skipped on later requests.
+const knownProfiles = new Set<string>();
+
 // Reads the session from HttpOnly cookies. Refreshes the access token when it has expired.
 export async function requireAuth(
   req: Request,
@@ -42,15 +45,18 @@ export async function requireAuth(
     return;
   }
 
-  try {
-    await prisma.profile.upsert({
-      where: { id: user.id },
-      update: {},
-      create: { id: user.id },
-    });
-  } catch {
-    res.status(500).json({ error: "Could not load account" });
-    return;
+  if (!knownProfiles.has(user.id)) {
+    try {
+      await prisma.profile.upsert({
+        where: { id: user.id },
+        update: {},
+        create: { id: user.id },
+      });
+    } catch {
+      res.status(500).json({ error: "Could not load account" });
+      return;
+    }
+    knownProfiles.add(user.id);
   }
 
   res.locals.user = user;
