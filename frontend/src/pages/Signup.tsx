@@ -6,12 +6,13 @@ import Header from '../components/Sheared/Header';
 const Signup = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
   try {
-    const result = await signUp(email, password);
+    const result = await signUp(email, password, username);
     if (result.confirmationRequired) {
       alert("Check your email to confirm your account.");
       return;
@@ -32,6 +33,17 @@ const Signup = () => {
       <h1>Sign up</h1>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full">
+        <input
+          className="p-2 border border-gray-300 rounded-full px-4"
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          pattern="[A-Za-z0-9_]{3,20}"
+          title="3-20 letters, numbers or underscores"
+          required={true}
+        />
+
         <input
           className="p-2 border border-gray-300 rounded-full px-4"
           type="email"

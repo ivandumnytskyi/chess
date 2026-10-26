@@ -11,6 +11,8 @@ const {
   mockSignIn,
   mockSignUp,
   mockProfileUpsert,
+  mockProfileFindUnique,
+  mockProfileUpdate,
   mockGameCreate,
   mockGameFindFirst,
   mockGameUpdate,
@@ -69,6 +71,8 @@ const {
     mockSignIn: vi.fn(),
     mockSignUp: vi.fn(),
     mockProfileUpsert: vi.fn(),
+    mockProfileFindUnique: vi.fn(),
+    mockProfileUpdate: vi.fn(),
     mockGameCreate,
     mockGameFindFirst,
     mockGameUpdate,
@@ -89,7 +93,7 @@ vi.mock("../lib/supabase", () => ({
 }));
 vi.mock("../lib/prisma", () => ({
   prisma: {
-    profile: { upsert: mockProfileUpsert },
+    profile: { upsert: mockProfileUpsert, findUnique: mockProfileFindUnique, update: mockProfileUpdate },
     game: { create: mockGameCreate, findFirst: mockGameFindFirst, update: mockGameUpdate },
     move: { create: mockMoveCreate },
     $transaction: mockTransaction,
@@ -114,6 +118,8 @@ beforeEach(() => {
   });
   mockRefreshSession.mockResolvedValue({ data: { user: null, session: null }, error: { message: "invalid refresh token" } });
   mockProfileUpsert.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id }));
+  mockProfileFindUnique.mockResolvedValue(null);
+  mockProfileUpdate.mockImplementation(async ({ data }: { data: { username: string } }) => ({ username: data.username }));
   fakeGames.clear();
 });
 
@@ -456,6 +462,139 @@ describe("verified user cache", () => {
   });
 });
 
+const uniqueViolation = () => Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+
+describe("username", () => {
+  const signupWith = (username: unknown) =>
+    fetch(`${baseUrl}/auth/signup`, {
+      method: "POST",
+      body: JSON.stringify({ email: "n@example.com", password: "secret", username }),
+      headers: {},
+    });
+
+  it.each([
+    ["too short", "ab"],
+    ["too long", "a".repeat(21)],
+    ["contains a space", "has space"],
+    ["contains a dash", "dash-name"],
+    ["reserved", "admin"],
+    ["missing", undefined],
+  ])("rejects a signup with a %s username", async (_name, username) => {
+    mockSignUp.mockClear();
+
+    const res = await signupWith(username);
+
+    expect(res.status).toBe(400);
+    expect(mockSignUp).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when the signup username is already taken", async () => {
+    mockProfileFindUnique.mockResolvedValueOnce({ id: "user-x" });
+    mockSignUp.mockClear();
+
+    const res = await signupWith("taken_name");
+
+    expect(res.status).toBe(409);
+    expect(mockSignUp).not.toHaveBeenCalled();
+  });
+
+  it("stores the normalized username in signup metadata", async () => {
+    mockSignUp.mockResolvedValue({ data: { user: { id: "user-new" }, session: null }, error: null });
+
+    await signupWith("  NewUser ");
+
+    expect(mockSignUp).toHaveBeenLastCalledWith({
+      email: "n@example.com",
+      password: "secret",
+      options: { data: { username: "newuser" } },
+    });
+  });
+
+  it("creates the profile with the signup username on the first request", async () => {
+    mockGetUser.mockResolvedValueOnce({
+      data: { user: { id: "user-meta", email: "m@example.com", user_metadata: { username: "meta_user" } } },
+      error: null,
+    });
+
+    const res = await fetch(`${baseUrl}/profile`, { headers: sessionCookie("token-meta-create") });
+
+    expect(res.status).toBe(200);
+    expect(mockProfileUpsert).toHaveBeenLastCalledWith({
+      where: { id: "user-meta" },
+      update: {},
+      create: { id: "user-meta", username: "meta_user" },
+    });
+  });
+
+  it("creates the profile without a username when the signup name was taken meanwhile", async () => {
+    mockGetUser.mockResolvedValueOnce({
+      data: { user: { id: "user-fallback", email: "f@example.com", user_metadata: { username: "fallback_name" } } },
+      error: null,
+    });
+    mockProfileUpsert.mockRejectedValueOnce(uniqueViolation());
+
+    const res = await fetch(`${baseUrl}/profile`, { headers: sessionCookie("token-meta-fallback") });
+
+    expect(res.status).toBe(200);
+    expect(mockProfileUpsert).toHaveBeenLastCalledWith({
+      where: { id: "user-fallback" },
+      update: {},
+      create: { id: "user-fallback" },
+    });
+  });
+
+  it("returns the saved username from GET /api/profile", async () => {
+    mockProfileFindUnique.mockResolvedValueOnce({ username: "saved_name" });
+
+    const res = await fetch(`${baseUrl}/profile`, { headers: sessionCookie("token-b") });
+
+    expect(await res.json()).toEqual({ username: "saved_name" });
+  });
+
+  it("changes the username to its normalized form", async () => {
+    const res = await fetch(`${baseUrl}/profile/username`, {
+      method: "PATCH",
+      body: JSON.stringify({ username: " NewName " }),
+      headers: sessionCookie("token-a"),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ username: "newname" });
+    expect(mockProfileUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: { id: "user-a" }, data: { username: "newname" } }),
+    );
+  });
+
+  it("returns 409 when the new username belongs to someone else", async () => {
+    mockProfileUpdate.mockRejectedValueOnce(uniqueViolation());
+
+    const res = await fetch(`${baseUrl}/profile/username`, {
+      method: "PATCH",
+      body: JSON.stringify({ username: "taken_name" }),
+      headers: sessionCookie("token-a"),
+    });
+
+    expect(res.status).toBe(409);
+  });
+
+  it.each([
+    ["too short", "ab"],
+    ["reserved", "bot"],
+    ["missing", undefined],
+  ])("rejects a username change with a %s name", async (_name, username) => {
+    mockProfileUpdate.mockClear();
+
+    const res = await fetch(`${baseUrl}/profile/username`, {
+      method: "PATCH",
+      body: JSON.stringify({ username }),
+      headers: sessionCookie("token-a"),
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockProfileUpdate).not.toHaveBeenCalled();
+  });
+});
+
 const SESSION_A = { access_token: "token-a", refresh_token: "refresh-a", expires_in: 3600 };
 
 const setCookies = (res: TestResponse): string[] => (res.headers["set-cookie"] ?? []) as string[];
@@ -511,7 +650,7 @@ describe("session cookies", () => {
 
     const res = await fetch(`${baseUrl}/auth/signup`, {
       method: "POST",
-      body: JSON.stringify({ email: "c@example.com", password: "secret" }),
+      body: JSON.stringify({ email: "c@example.com", password: "secret", username: "user_c" }),
       headers: {},
     });
 
@@ -551,7 +690,7 @@ describe("session cookies", () => {
     expect(mockProfileUpsert).toHaveBeenCalledWith({
       where: { id: "user-c" },
       update: {},
-      create: { id: "user-c" },
+      create: { id: "user-c", username: null },
     });
   });
 

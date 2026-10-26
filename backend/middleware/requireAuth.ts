@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { prisma } from "../lib/prisma";
 import { ACCESS_COOKIE, REFRESH_COOKIE, clearSessionCookies, setSessionCookies } from "../lib/sessionCookies";
+import { isUniqueViolation, normalizeUsername } from "../lib/username";
 
 // Profiles are never deleted, so once one exists for a user it is skipped on later requests.
 const knownProfiles = new Set<string>();
@@ -18,6 +19,16 @@ const rememberVerifiedUser = (accessToken: string, user: User) => {
   }
   verifiedUsers.set(accessToken, { user, expiresAt: now + VERIFIED_TTL_MS });
 };
+
+// Creates the profile if it is missing. The name from signup can be taken by then, so it falls back to no name.
+async function ensureProfile(userId: string, username: string | null): Promise<void> {
+  try {
+    await prisma.profile.upsert({ where: { id: userId }, update: {}, create: { id: userId, username } });
+  } catch (error) {
+    if (!username || !isUniqueViolation(error)) throw error;
+    await prisma.profile.upsert({ where: { id: userId }, update: {}, create: { id: userId } });
+  }
+}
 
 // Reads the session from HttpOnly cookies. Refreshes the access token when it has expired.
 export async function requireAuth(
@@ -68,11 +79,7 @@ export async function requireAuth(
 
   if (!knownProfiles.has(user.id)) {
     try {
-      await prisma.profile.upsert({
-        where: { id: user.id },
-        update: {},
-        create: { id: user.id },
-      });
+      await ensureProfile(user.id, normalizeUsername(user.user_metadata?.username));
     } catch {
       res.status(500).json({ error: "Could not load account" });
       return;

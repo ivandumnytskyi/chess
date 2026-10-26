@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { createNewGame, makeMove, timeoutGame, getAllLegalMoves } from "../controllers/GameController";
 import { login, logout, signup, exchangeSession } from "../controllers/AuthController";
+import { getProfile, changeUsername } from "../controllers/ProfileController";
 import { requireAuth } from "../../middleware/requireAuth";
 
 
@@ -21,6 +22,10 @@ router.get("/auth", requireAuth, (req, res) => {
 });
 
 router.post("/game", requireAuth, createNewGame);
+
+router.get("/profile", requireAuth, getProfile);
+
+router.patch("/profile/username", requireAuth, changeUsername);
 
 router.post("/game/move", requireAuth, makeMove);
 

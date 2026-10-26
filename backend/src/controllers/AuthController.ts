@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { supabase } from "../../lib/supabase";
+import { prisma } from "../../lib/prisma";
 import { clearSessionCookies, setSessionCookies } from "../../lib/sessionCookies";
+import { normalizeUsername } from "../../lib/username";
 
 const readCredentials = (body: unknown): { email: string; password: string } | null => {
   if (typeof body !== "object" || body === null) return null;
@@ -36,7 +38,20 @@ export async function signup(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const { data, error } = await supabase.auth.signUp(credentials);
+  const username = normalizeUsername((req.body as Record<string, unknown>).username);
+  if (!username) {
+    res.status(400).json({ error: "Username must be 3-20 letters, numbers or underscores" });
+    return;
+  }
+
+  const taken = await prisma.profile.findUnique({ where: { username }, select: { id: true } });
+  if (taken) {
+    res.status(409).json({ error: "Username is already taken" });
+    return;
+  }
+
+  // The profile is created on the first authenticated request, so the name is kept in user metadata until then.
+  const { data, error } = await supabase.auth.signUp({ ...credentials, options: { data: { username } } });
   if (error) {
     res.status(400).json({ error: error.message });
     return;

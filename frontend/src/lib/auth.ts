@@ -15,8 +15,12 @@ async function readError(res: Response, fallback: string): Promise<Error> {
   return new Error(data.error ?? fallback);
 }
 
-export async function signUp(email: string, password: string): Promise<{ confirmationRequired: boolean }> {
-  const res = await postJson("/auth/signup", { email, password });
+export async function signUp(
+  email: string,
+  password: string,
+  username: string,
+): Promise<{ confirmationRequired: boolean }> {
+  const res = await postJson("/auth/signup", { email, password, username });
   if (res.status === 202) return { confirmationRequired: true };
   if (!res.ok) throw await readError(res, "Sign up failed");
 

@@ -1,5 +1,6 @@
 import Selection from "./Selection";
 import Overlay from "./Overlay";
+import UsernameForm from "./UsernameForm";
 import { signOut } from "../../lib/auth";
 
 type SettingsProps = {
@@ -21,6 +22,7 @@ const Settings = ({ onClose }: SettingsProps) => {
       px-4 py-4"
       >
         <p>Settings</p>
+        <UsernameForm />
         <Selection />
         <button
           className="px-4 py-2 bg-blue-500 text-white rounded-lg"
