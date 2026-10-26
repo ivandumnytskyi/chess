@@ -1,10 +1,23 @@
 import type { Request, Response, NextFunction } from "express";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { prisma } from "../lib/prisma";
 import { ACCESS_COOKIE, REFRESH_COOKIE, clearSessionCookies, setSessionCookies } from "../lib/sessionCookies";
 
 // Profiles are never deleted, so once one exists for a user it is skipped on later requests.
 const knownProfiles = new Set<string>();
+
+// A verified access token skips the Supabase call for this long. Revoked tokens stay valid until then.
+const VERIFIED_TTL_MS = 30_000;
+const verifiedUsers = new Map<string, { user: User; expiresAt: number }>();
+
+const rememberVerifiedUser = (accessToken: string, user: User) => {
+  const now = Date.now();
+  for (const [token, entry] of verifiedUsers) {
+    if (entry.expiresAt <= now) verifiedUsers.delete(token);
+  }
+  verifiedUsers.set(accessToken, { user, expiresAt: now + VERIFIED_TTL_MS });
+};
 
 // Reads the session from HttpOnly cookies. Refreshes the access token when it has expired.
 export async function requireAuth(
@@ -20,11 +33,19 @@ export async function requireAuth(
     return;
   }
 
-  let user = null;
+  let user: User | null = null;
 
   if (typeof accessToken === "string") {
-    const { data, error } = await supabase.auth.getUser(accessToken);
-    if (!error && data.user) user = data.user;
+    const cached = verifiedUsers.get(accessToken);
+    if (cached && cached.expiresAt > Date.now()) {
+      user = cached.user;
+    } else {
+      const { data, error } = await supabase.auth.getUser(accessToken);
+      if (!error && data.user) {
+        user = data.user;
+        rememberVerifiedUser(accessToken, data.user);
+      }
+    }
   }
 
   if (!user && typeof refreshToken === "string") {

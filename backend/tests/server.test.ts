@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import cookieParser from "cookie-parser";
 import { IncomingMessage, ServerResponse } from "node:http";
@@ -101,6 +101,8 @@ const USERS: Record<string, { id: string; email: string }> = {
   "token-b": { id: "user-b", email: "b@example.com" },
   "token-c": { id: "user-c", email: "c@example.com" },
   "token-d": { id: "user-d", email: "d@example.com" },
+  "token-cache-reuse": { id: "user-cache-reuse", email: "reuse@example.com" },
+  "token-cache-expiry": { id: "user-cache-expiry", email: "expiry@example.com" },
 };
 
 beforeEach(() => {
@@ -409,6 +411,48 @@ describe("authentication", () => {
     const res = await fetch(`${baseUrl}/auth`, { headers: sessionCookie("token-b") });
 
     expect(await res.json()).toEqual({ id: "user-b", email: "b@example.com" });
+  });
+});
+
+describe("verified user cache", () => {
+  const START = new Date("2030-01-01T00:00:00Z").getTime();
+
+  const getUserCallsFor = (token: string) =>
+    mockGetUser.mock.calls.filter(([calledWith]) => calledWith === token).length;
+
+  beforeEach(() => {
+    mockGetUser.mockClear();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(START);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("verifies a token once for repeated requests within 30 seconds", async () => {
+    await fetch(`${baseUrl}/auth`, { headers: sessionCookie("token-cache-reuse") });
+    vi.setSystemTime(START + 29_000);
+    const res = await fetch(`${baseUrl}/auth`, { headers: sessionCookie("token-cache-reuse") });
+
+    expect(res.status).toBe(200);
+    expect(getUserCallsFor("token-cache-reuse")).toBe(1);
+  });
+
+  it("verifies the token again once 30 seconds have passed", async () => {
+    await fetch(`${baseUrl}/auth`, { headers: sessionCookie("token-cache-expiry") });
+    vi.setSystemTime(START + 30_001);
+    await fetch(`${baseUrl}/auth`, { headers: sessionCookie("token-cache-expiry") });
+
+    expect(getUserCallsFor("token-cache-expiry")).toBe(2);
+  });
+
+  it("does not cache a token that fails verification", async () => {
+    await fetch(`${baseUrl}/auth`, { headers: sessionCookie("forged") });
+    const res = await fetch(`${baseUrl}/auth`, { headers: sessionCookie("forged") });
+
+    expect(res.status).toBe(401);
+    expect(getUserCallsFor("forged")).toBe(2);
   });
 });
 

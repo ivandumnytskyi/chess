@@ -7,7 +7,7 @@ import Clock from "../components/Game/Clock";
 import Promotion from "../components/Game/Promotion";
 import TimeControlPicker from "../components/Game/TimeControlPicker";
 import { authorizedFetch } from "../lib/authorization";
-import { DEFAULT_TIME_CONTROL, type TimeControlId } from "../constants/timeControls";
+import { DEFAULT_TIME_CONTROL, incrementFor, type TimeControlId } from "../constants/timeControls";
 
 const API_URL = "http://localhost:3000/api";
 
@@ -156,6 +156,8 @@ function Game() {
 
   // Plays the move on the local board right away; the server's answer replaces it when it arrives.
   const applyMoveLocally = (from: Position, to: Position) => {
+    const mover = game?.currentTurn ?? "white";
+    const increment = incrementFor(timeControl);
     setGame((prev) => {
       if (!prev) return prev;
       const squares = prev.squares.map((r) => [...r]);
@@ -163,7 +165,12 @@ function Game() {
       squares[from.row][from.col] = null;
       return { ...prev, squares, currentTurn: prev.currentTurn === "white" ? "black" : "white" };
     });
-    setClock({ whiteRemainingMs: remainingFor("white"), blackRemainingMs: remainingFor("black"), syncedAt: Date.now() });
+    // Mirrors the server: the mover keeps the time they had left and gets the increment.
+    setClock({
+      whiteRemainingMs: remainingFor("white") + (mover === "white" ? increment : 0),
+      blackRemainingMs: remainingFor("black") + (mover === "black" ? increment : 0),
+      syncedAt: Date.now(),
+    });
     setMovesByPiece({});
     setSelectedPiece(null);
     setLastMove({ from, to, id: Date.now() });
