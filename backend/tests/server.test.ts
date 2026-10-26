@@ -5,11 +5,12 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import router from "../src/routs/route";
 
-const { mockGetUser, mockRefreshSession, mockSignIn, mockSignUp } = vi.hoisted(() => ({
+const { mockGetUser, mockRefreshSession, mockSignIn, mockSignUp, mockProfileUpsert } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockRefreshSession: vi.fn(),
   mockSignIn: vi.fn(),
   mockSignUp: vi.fn(),
+  mockProfileUpsert: vi.fn(),
 }));
 vi.mock("../lib/supabase", () => ({
   supabase: {
@@ -19,6 +20,11 @@ vi.mock("../lib/supabase", () => ({
       signInWithPassword: mockSignIn,
       signUp: mockSignUp,
     },
+  },
+}));
+vi.mock("../lib/prisma", () => ({
+  prisma: {
+    profile: { upsert: mockProfileUpsert },
   },
 }));
 
@@ -35,6 +41,7 @@ beforeEach(() => {
       : { data: { user: null }, error: { message: "invalid token" } };
   });
   mockRefreshSession.mockResolvedValue({ data: { user: null, session: null }, error: { message: "invalid refresh token" } });
+  mockProfileUpsert.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id }));
 });
 
 const app = express();
@@ -336,6 +343,17 @@ describe("session cookies", () => {
       expect.stringContaining("access_token=token-a2"),
       expect.stringContaining("refresh_token=refresh-a2"),
     ]);
+  });
+
+  it("creates the profile for an authenticated user on first request", async () => {
+    const res = await request("GET", "/api/auth", undefined, { cookie: "access_token=token-a" });
+
+    expect(res.status).toBe(200);
+    expect(mockProfileUpsert).toHaveBeenCalledWith({
+      where: { id: "user-a" },
+      update: {},
+      create: { id: "user-a" },
+    });
   });
 
   it("clears the cookies and returns 401 when the session cannot be refreshed", async () => {

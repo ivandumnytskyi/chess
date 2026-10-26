@@ -11,3 +11,84 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum Color {
+  white
+  black
+}
+
+enum GameStatus {
+  active
+  finished
+}
+
+enum GameResult {
+  white_wins
+  black_wins
+  draw
+}
+
+enum EndReason {
+  checkmate
+  stalemate
+  draw
+  timeout
+  resignation
+}
+
+// One row per Supabase auth user. The id is the Supabase user id, so the
+// profile can be upserted on the first authenticated request.
+model Profile {
+  id        String   @id @db.Uuid
+  username  String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gamesAsWhite Game[] @relation("WhitePlayer")
+  gamesAsBlack Game[] @relation("BlackPlayer")
+}
+
+model Game {
+  id   String @id @default(uuid()) @db.Uuid
+  
+  whitePlayerId String? @db.Uuid
+  blackPlayerId String? @db.Uuid
+  whitePlayer   Profile? @relation("WhitePlayer", fields: [whitePlayerId], references: [id], onDelete: SetNull)
+  blackPlayer   Profile? @relation("BlackPlayer", fields: [blackPlayerId], references: [id], onDelete: SetNull)
+
+  timeControlId    String
+  timeInitialMs    Int
+  timeIncrementMs  Int
+  whiteRemainingMs Int
+  blackRemainingMs Int
+  // Set to the time the side to move started thinking, to calculate the clock on the next move.
+  lastMoveAt       DateTime?
+
+  currentTurn Color      @default(white)
+  status      GameStatus @default(active)
+  result      GameResult?
+  endReason   EndReason?
+
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  moves Move[]
+
+  @@index([whitePlayerId, createdAt])
+  @@index([blackPlayerId, createdAt])
+}
+
+model Move {
+  id     String @id @default(uuid()) @db.Uuid
+  gameId String @db.Uuid
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  // 1-based move number in the game (white's first move is ply 1).
+  ply    Int
+  color  Color
+  // Move payload as sent by the client (from/to squares and promotion).
+  move   Json
+  playedAt DateTime @default(now())
+
+  @@unique([gameId, ply])
+}

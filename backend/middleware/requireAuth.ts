@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { supabase } from "../lib/supabase";
+import { prisma } from "../lib/prisma";
 import { ACCESS_COOKIE, REFRESH_COOKIE, clearSessionCookies, setSessionCookies } from "../lib/sessionCookies";
 
 // Reads the session from HttpOnly cookies. Refreshes the access token when it has expired.
@@ -38,6 +39,17 @@ export async function requireAuth(
   if (!user) {
     clearSessionCookies(res);
     res.status(401).json({ error: "Invalid or expired session" });
+    return;
+  }
+
+  try {
+    await prisma.profile.upsert({
+      where: { id: user.id },
+      update: {},
+      create: { id: user.id },
+    });
+  } catch {
+    res.status(500).json({ error: "Could not load account" });
     return;
   }
 
