@@ -32,4 +32,12 @@ export type GameView = {
   squares: Cell[][];
   currentTurn: Color;
   status: GameStatus;
+  winner?: Color;
+};
+
+// Remaining time per side, as last reported by the server at `syncedAt` (local clock).
+export type ClockState = {
+  whiteRemainingMs: number;
+  blackRemainingMs: number;
+  syncedAt: number;
 };

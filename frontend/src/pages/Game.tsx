@@ -1,16 +1,29 @@
-import { useEffect, useState } from "react";
-import type { GameView, Cell, Color, GameStatus, MoveData, Position } from "../types";
+import { useEffect, useRef, useState } from "react";
+import type { GameView, Cell, Color, ClockState, GameStatus, MoveData, Position } from "../types";
 import { useTheme } from "../context/ThemeContext";
 import Board from "../components/Game/Board";
 import GameOverlay from "../components/Game/GameOverlay";
+import Clock from "../components/Game/Clock";
+import TimeControlPicker from "../components/Game/TimeControlPicker";
 import { authorizedFetch } from "../lib/authorization";
+import { DEFAULT_TIME_CONTROL, type TimeControlId } from "../constants/timeControls";
 
 const API_URL = "http://localhost:3000/api";
 
-async function createGame(): Promise<GameView> {
-  const res = await authorizedFetch(`${API_URL}/game`, { method: "POST" });
-  const data: { gameId: string; boardState: { squares: Cell[][] }; currentTurn: Color } = await res.json();
-  return { gameId: data.gameId, squares: data.boardState.squares, currentTurn: data.currentTurn, status: "active" };
+type ServerClock = { whiteRemainingMs: number; blackRemainingMs: number };
+
+async function createGame(timeControl: TimeControlId): Promise<{ game: GameView; clock: ClockState }> {
+  const res = await authorizedFetch(`${API_URL}/game`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ timeControl }),
+  });
+  if (!res.ok) throw new Error("Could not start game");
+  const data: { gameId: string; boardState: { squares: Cell[][] }; currentTurn: Color; clock: ServerClock } = await res.json();
+  return {
+    game: { gameId: data.gameId, squares: data.boardState.squares, currentTurn: data.currentTurn, status: "active" },
+    clock: { ...data.clock, syncedAt: Date.now() },
+  };
 }
 
 const pieceKey = (position: Position) => `${position.row}-${position.col}`;
@@ -33,29 +46,72 @@ function Game() {
   const [game, setGame] = useState<GameView | null>(null);
   const [movesByPiece, setMovesByPiece] = useState<Record<string, Position[]>>({});
   const [error, setError] = useState<string | null>(null);
+  const [timeControl, setTimeControl] = useState<TimeControlId>(DEFAULT_TIME_CONTROL);
+  const [clock, setClock] = useState<ClockState | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const legalMoves = selectedPiece ? movesByPiece[pieceKey(selectedPiece)] ?? [] : [];
+  const serverOver = game ? Boolean(game.winner) || (game.status !== "active" && game.status !== "check") : false;
+  const timeoutRequested = useRef(false);
+
+  const remainingFor = (color: Color): number => {
+    if (!clock) return 0;
+    const base = color === "white" ? clock.whiteRemainingMs : clock.blackRemainingMs;
+    const running = !serverOver && game?.currentTurn === color;
+    return running ? Math.max(0, base - Math.max(0, now - clock.syncedAt)) : base;
+  };
+
+  // The side to move has run out of time locally; the server is told so the result is recorded.
+  const timedOut = game !== null && clock !== null && !serverOver && remainingFor(game.currentTurn) === 0;
+  const isOver = serverOver || timedOut;
+  const resolvedWinner: Color | undefined =
+    game?.winner ?? (timedOut && game ? (game.currentTurn === "white" ? "black" : "white") : undefined);
+  const gameId = game?.gameId;
+
+  // Re-render every 100ms so the side to move's clock counts down between server updates.
+  useEffect(() => {
+    if (!game || isOver) return;
+    const id = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(id);
+  }, [game, isOver]);
 
   useEffect(() => {
-    const load = async () => {
+    if (!timedOut || !gameId || timeoutRequested.current) return;
+    timeoutRequested.current = true;
+
+    const reportTimeout = async () => {
       try {
-        const newGame = await createGame();
-        setGame(newGame);
-        setMovesByPiece(await fetchAllLegalMoves(newGame.gameId));
+        const res = await authorizedFetch(`${API_URL}/game/timeout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gameId }),
+        });
+        if (!res.ok) {
+          setError(await res.text());
+          return;
+        }
+        const data: { winner: Color; clock: ServerClock } = await res.json();
+        setGame((prev) => (prev ? { ...prev, winner: data.winner } : prev));
+        setClock({ ...data.clock, syncedAt: Date.now() });
       } catch {
         setError("Could not reach the server");
+      } finally {
+        timeoutRequested.current = false;
       }
     };
-    load();
-  }, []);
+    void reportTimeout();
+  }, [gameId, timedOut]);
 
   const squares = game?.squares ?? [];
 
-  const restart = async () => {
+  const startGame = async () => {
     try {
-      const newGame = await createGame();
+      const { game: newGame, clock: newClock } = await createGame(timeControl);
       setGame(newGame);
+      setClock(newClock);
+      setNow(Date.now());
       setSelectedPiece(null);
+      setError(null);
       setMovesByPiece(await fetchAllLegalMoves(newGame.gameId));
     } catch {
       setError("Could not reach the server");
@@ -63,7 +119,7 @@ function Game() {
   };
 
   const handleSquareClick = async (row: number, col: number) => {
-    if (!game) return;
+    if (!game || isOver) return;
     const clicked: Position = { row, col };
 
     try {
@@ -77,7 +133,20 @@ function Game() {
           body: JSON.stringify({ gameId: game.gameId, moveData, color }),
         });
         if (!res.ok) {
-          setError(await res.text());
+          const text = await res.text();
+          // A timeout comes back as JSON with the winner and final clocks; other errors are plain text.
+          try {
+            const body = JSON.parse(text) as { winner?: Color; clock?: ServerClock };
+            if (body.winner && body.clock) {
+              setGame({ ...game, winner: body.winner });
+              setClock({ ...body.clock, syncedAt: Date.now() });
+              setSelectedPiece(null);
+              return;
+            }
+          } catch {
+            // not JSON, show the message below
+          }
+          setError(text);
           return;
         }
         const data: {
@@ -85,8 +154,10 @@ function Game() {
           currentTurn: Color;
           status: GameStatus;
           legalMoves: PieceMoves[];
+          clock: ServerClock;
         } = await res.json();
         setGame({ ...game, squares: data.boardState.squares, currentTurn: data.currentTurn, status: data.status });
+        setClock({ ...data.clock, syncedAt: Date.now() });
         setMovesByPiece(toMovesByPiece(data.legalMoves));
         setSelectedPiece(null);
         return;
@@ -106,22 +177,27 @@ function Game() {
   return (
     <>
       {error && <p className="absolute top-2 left-1/2 -translate-x-1/2 text-red-600">{error}</p>}
-      <div className="grid grid-rows-8 gap-0 size-[min(100vw,90vh)] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 absolute">
-        {game && game.status !== "active" &&
-          game.status !== "check" && (
-            <GameOverlay game={game} restart={restart} />
-          )}
-        {game && (
-          <Board
-            squares={squares}
-            themeIndex={themeIndex}
-            handleSquareClick={handleSquareClick}
-            selectedPiece={selectedPiece}
-            legalMoves={legalMoves}
-            pieceTheme={pieceTheme}
-          />
-        )}
-      </div>
+      {game && clock ? (
+        <div className="flex flex-col items-center gap-2 w-[min(100vw,calc(90vh-7rem))] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 absolute">
+          <Clock color="black" remainingMs={remainingFor("black")} active={!isOver && game.currentTurn === "black"} />
+          <div className="grid grid-rows-8 gap-0 w-full aspect-square relative">
+            {isOver && (
+              <GameOverlay game={{ ...game, winner: resolvedWinner }} restart={startGame} />
+            )}
+            <Board
+              squares={squares}
+              themeIndex={themeIndex}
+              handleSquareClick={handleSquareClick}
+              selectedPiece={selectedPiece}
+              legalMoves={legalMoves}
+              pieceTheme={pieceTheme}
+            />
+          </div>
+          <Clock color="white" remainingMs={remainingFor("white")} active={!isOver && game.currentTurn === "white"} />
+        </div>
+      ) : (
+        <TimeControlPicker value={timeControl} onChange={setTimeControl} onStart={startGame} />
+      )}
     </>
   );
 }

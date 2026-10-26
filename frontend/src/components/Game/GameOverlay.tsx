@@ -2,14 +2,15 @@ import type { GameView } from "../../types";
 import Overlay from "../Sheared/Overlay";
 
 const GameOverlay = ({ game, restart }: { game: GameView; restart: () => void }) => {
-  if (game.status === "active") return null;
+  if (game.status === "active" && !game.winner) return null;
 
-  const message =
-    game.status === "draw"
-      ? "Draw!"
-      : game.status === "checkmate"
-      ? (game.currentTurn === "white" ? "Black" : "White") + " wins."
-      : "Stalemate!";
+  const message = game.winner
+    ? `${game.winner === "white" ? "White" : "Black"} wins on time.`
+    : game.status === "draw"
+    ? "Draw!"
+    : game.status === "checkmate"
+    ? (game.currentTurn === "white" ? "Black" : "White") + " wins."
+    : "Stalemate!";
 
   return (
     <>
