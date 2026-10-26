@@ -28,6 +28,30 @@ async function createGame(timeControl: TimeControlId): Promise<{ game: GameView;
 
 const pieceKey = (position: Position) => `${position.row}-${position.col}`;
 
+type LastMove = { from: Position; to: Position; id: number };
+
+// What the board looked like before an optimistic move, so it can be restored if the server rejects the move.
+type BoardSnapshot = {
+  game: GameView;
+  clock: ClockState | null;
+  movesByPiece: Record<string, Position[]>;
+  lastMove: LastMove | null;
+};
+
+// Castling, en passant and promotion change more than the two squares, so they wait for the server.
+const isSimpleMove = (squares: Cell[][], from: Position, to: Position): boolean => {
+  const piece = squares[from.row][from.col];
+  if (!piece) return false;
+  if (piece.pieceType === "king" && Math.abs(to.col - from.col) === 2) return false;
+  if (piece.pieceType === "pawn") {
+    const isDiagonal = from.col !== to.col;
+    const isCapture = squares[to.row][to.col] !== null;
+    if (isDiagonal && !isCapture) return false;
+    if (to.row === 0 || to.row === 7) return false;
+  }
+  return true;
+};
+
 type PieceMoves = { from: Position; moves: Position[] };
 
 const toMovesByPiece = (entries: PieceMoves[]): Record<string, Position[]> =>
@@ -49,10 +73,12 @@ function Game() {
   const [timeControl, setTimeControl] = useState<TimeControlId>(DEFAULT_TIME_CONTROL);
   const [clock, setClock] = useState<ClockState | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [lastMove, setLastMove] = useState<{ from: Position; to: Position; id: number } | null>(null);
 
   const legalMoves = selectedPiece ? movesByPiece[pieceKey(selectedPiece)] ?? [] : [];
   const serverOver = game ? Boolean(game.winner) || (game.status !== "active" && game.status !== "check") : false;
   const timeoutRequested = useRef(false);
+  const moveInFlight = useRef(false);
 
   const remainingFor = (color: Color): number => {
     if (!clock) return 0;
@@ -110,6 +136,7 @@ function Game() {
       setGame(newGame);
       setClock(newClock);
       setNow(Date.now());
+      setLastMove(null);
       setSelectedPiece(null);
       setError(null);
       setMovesByPiece(await fetchAllLegalMoves(newGame.gameId));
@@ -118,48 +145,85 @@ function Game() {
     }
   };
 
+  const restoreSnapshot = (snapshot: BoardSnapshot) => {
+    setGame(snapshot.game);
+    setClock(snapshot.clock);
+    setMovesByPiece(snapshot.movesByPiece);
+    setLastMove(snapshot.lastMove);
+  };
+
+  // Plays the move on the local board right away; the server's answer replaces it when it arrives.
+  const applyMoveLocally = (from: Position, to: Position) => {
+    setGame((prev) => {
+      if (!prev) return prev;
+      const squares = prev.squares.map((r) => [...r]);
+      squares[to.row][to.col] = squares[from.row][from.col];
+      squares[from.row][from.col] = null;
+      return { ...prev, squares, currentTurn: prev.currentTurn === "white" ? "black" : "white" };
+    });
+    setClock({ whiteRemainingMs: remainingFor("white"), blackRemainingMs: remainingFor("black"), syncedAt: Date.now() });
+    setMovesByPiece({});
+    setSelectedPiece(null);
+    setLastMove({ from, to, id: Date.now() });
+  };
+
+  const sendMove = async (snapshot: BoardSnapshot, moveData: MoveData, color: Color, appliedLocally: boolean) => {
+    moveInFlight.current = true;
+    try {
+      const res = await authorizedFetch(`${API_URL}/game/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameId: snapshot.game.gameId, moveData, color }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        restoreSnapshot(snapshot);
+        // A timeout comes back as JSON with the winner and final clocks; other errors are plain text.
+        try {
+          const body = JSON.parse(text) as { winner?: Color; clock?: ServerClock };
+          if (body.winner && body.clock) {
+            setGame({ ...snapshot.game, winner: body.winner });
+            setClock({ ...body.clock, syncedAt: Date.now() });
+            return;
+          }
+        } catch {
+          // not JSON, show the message below
+        }
+        setError(text);
+        return;
+      }
+      const data: {
+        boardState: { squares: Cell[][] };
+        currentTurn: Color;
+        status: GameStatus;
+        legalMoves: PieceMoves[];
+        clock: ServerClock;
+      } = await res.json();
+      setGame((prev) => (prev ? { ...prev, squares: data.boardState.squares, currentTurn: data.currentTurn, status: data.status } : prev));
+      setClock({ ...data.clock, syncedAt: Date.now() });
+      setMovesByPiece(toMovesByPiece(data.legalMoves));
+      // Moves played locally already animated; special moves animate once the server confirms them.
+      if (!appliedLocally) setLastMove({ from: moveData.from, to: moveData.to, id: Date.now() });
+    } catch {
+      restoreSnapshot(snapshot);
+      setError("Could not reach the server");
+    } finally {
+      moveInFlight.current = false;
+    }
+  };
+
   const handleSquareClick = async (row: number, col: number) => {
-    if (!game || isOver) return;
+    if (!game || isOver || moveInFlight.current) return;
     const clicked: Position = { row, col };
 
     try {
       if (selectedPiece && legalMoves.some((m) => m.row === row && m.col === col)) {
         const color = game.squares[selectedPiece.row][selectedPiece.col]?.color;
         if (!color) return;
-        const moveData: MoveData = { from: selectedPiece, to: clicked };
-        const res = await authorizedFetch(`${API_URL}/game/move`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gameId: game.gameId, moveData, color }),
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          // A timeout comes back as JSON with the winner and final clocks; other errors are plain text.
-          try {
-            const body = JSON.parse(text) as { winner?: Color; clock?: ServerClock };
-            if (body.winner && body.clock) {
-              setGame({ ...game, winner: body.winner });
-              setClock({ ...body.clock, syncedAt: Date.now() });
-              setSelectedPiece(null);
-              return;
-            }
-          } catch {
-            // not JSON, show the message below
-          }
-          setError(text);
-          return;
-        }
-        const data: {
-          boardState: { squares: Cell[][] };
-          currentTurn: Color;
-          status: GameStatus;
-          legalMoves: PieceMoves[];
-          clock: ServerClock;
-        } = await res.json();
-        setGame({ ...game, squares: data.boardState.squares, currentTurn: data.currentTurn, status: data.status });
-        setClock({ ...data.clock, syncedAt: Date.now() });
-        setMovesByPiece(toMovesByPiece(data.legalMoves));
-        setSelectedPiece(null);
+        const snapshot: BoardSnapshot = { game, clock, movesByPiece, lastMove };
+        const simple = isSimpleMove(game.squares, selectedPiece, clicked);
+        if (simple) applyMoveLocally(selectedPiece, clicked);
+        await sendMove(snapshot, { from: selectedPiece, to: clicked }, color, simple);
         return;
       }
 
@@ -191,6 +255,7 @@ function Game() {
               selectedPiece={selectedPiece}
               legalMoves={legalMoves}
               pieceTheme={pieceTheme}
+              lastMove={lastMove}
             />
           </div>
           <Clock color="white" remainingMs={remainingFor("white")} active={!isOver && game.currentTurn === "white"} />
