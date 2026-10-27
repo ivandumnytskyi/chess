@@ -34,6 +34,15 @@ enum EndReason {
   draw
   timeout
   resignation
+  agreement
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  declined
+  cancelled
+  expired
 }
 
 // One row per Supabase auth user. The id is the Supabase user id, so the
@@ -46,6 +55,9 @@ model Profile {
 
   gamesAsWhite Game[] @relation("WhitePlayer")
   gamesAsBlack Game[] @relation("BlackPlayer")
+
+  invitesSent     GameInvite[] @relation("InviteSender")
+  invitesReceived GameInvite[] @relation("InviteRecipient")
 }
 
 model Game {
@@ -68,14 +80,44 @@ model Game {
   status      GameStatus @default(active)
   result      GameResult?
   endReason   EndReason?
+  // The side that has offered a draw and is waiting for the other side to answer.
+  drawOfferedBy Color?
 
   createdAt  DateTime  @default(now())
   finishedAt DateTime?
 
   moves Move[]
+  invite GameInvite?
 
   @@index([whitePlayerId, createdAt])
   @@index([blackPlayerId, createdAt])
+}
+
+// An invitation to play a timed game. Accepting it creates the game, with the sender's color or a random one.
+model GameInvite {
+  id String @id @default(uuid()) @db.Uuid
+
+  senderId    String  @db.Uuid
+  recipientId String  @db.Uuid
+  sender      Profile @relation("InviteSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient   Profile @relation("InviteRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  timeControlId String
+
+  senderColor   Color?
+  // Both player ids in sorted order while the invite is pending, empty afterwards. The unique
+  // constraint then allows only one pending invite per pair, even when two requests race.
+  pairKey       String?      @unique
+  status        InviteStatus @default(pending)
+  gameId        String?      @unique @db.Uuid
+  game          Game?        @relation(fields: [gameId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  respondedAt DateTime?
+
+  @@index([recipientId, status])
+  @@index([senderId, status])
 }
 
 model Move {

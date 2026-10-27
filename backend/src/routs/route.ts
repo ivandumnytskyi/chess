@@ -1,8 +1,19 @@
 import { Router } from "express";
-import { createNewGame, makeMove, timeoutGame, getAllLegalMoves } from "../controllers/GameController";
+import {
+  createNewGame,
+  makeMove,
+  timeoutGame,
+  getAllLegalMoves,
+  getGame,
+  resignGame,
+  offerDraw,
+  acceptDraw,
+  declineDraw,
+} from "../controllers/GameController";
 import { login, logout, signup, exchangeSession } from "../controllers/AuthController";
 import { getProfile, changeUsername } from "../controllers/ProfileController";
 import { listGames } from "../controllers/GameHistoryController";
+import { sendInvite, listInvites, acceptInvite, declineInvite, cancelInvite } from "../controllers/InviteController";
 import { requireAuth } from "../../middleware/requireAuth";
 
 
@@ -30,11 +41,31 @@ router.patch("/profile/username", requireAuth, changeUsername);
 
 router.get("/games", requireAuth, listGames);
 
+router.post("/invites", requireAuth, sendInvite);
+
+router.get("/invites", requireAuth, listInvites);
+
+router.post("/invites/:id/accept", requireAuth, acceptInvite);
+
+router.post("/invites/:id/decline", requireAuth, declineInvite);
+
+router.post("/invites/:id/cancel", requireAuth, cancelInvite);
+
 router.post("/game/move", requireAuth, makeMove);
 
 router.post("/game/timeout", requireAuth, timeoutGame);
 
 router.get("/game/all-legal-moves", requireAuth, getAllLegalMoves);
+
+router.get("/game/:id", requireAuth, getGame);
+
+router.post("/game/resign", requireAuth, resignGame);
+
+router.post("/game/draw/offer", requireAuth, offerDraw);
+
+router.post("/game/draw/accept", requireAuth, acceptDraw);
+
+router.post("/game/draw/decline", requireAuth, declineDraw);
 
 router.get('/health', (req, res) => {
   res.send('OK');

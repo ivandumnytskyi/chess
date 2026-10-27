@@ -18,9 +18,10 @@ import { Prisma, type Game as GameRow } from "../../generated/prisma/client";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type LoadedGame = {
-  row: GameRow;
+  row: GameRow & { whitePlayer: { username: string | null } | null; blackPlayer: { username: string | null } | null };
   game: ChessGame;
   moveCount: number;
+  moves: MoveData[];
 };
 
 const getUserId = (res: Response): string => (res.locals.user as User).id;
@@ -37,18 +38,24 @@ const loadOwnedGame = async (gameId: unknown, userId: string): Promise<LoadedGam
       id: gameId,
       OR: [{ whitePlayerId: userId }, { blackPlayerId: userId }],
     },
-    include: { moves: { orderBy: { ply: "asc" } } },
+    include: {
+      moves: { orderBy: { ply: "asc" } },
+      whitePlayer: { select: { username: true } },
+      blackPlayer: { select: { username: true } },
+    },
   });
   if (!row) return null;
 
   const game = new ChessGame();
+  const moves: MoveData[] = [];
   for (const stored of row.moves) {
     const move: unknown = stored.move;
     if (!isMoveData(move)) throw new Error(`Stored move ${stored.ply} of game ${row.id} is invalid`);
     game.makeMove({ from: move.from, to: move.to }, stored.color, move.promotion);
+    moves.push(move);
   }
 
-  return { row, game, moveCount: row.moves.length };
+  return { row, game, moveCount: row.moves.length, moves };
 };
 
 const clockFromRow = (row: GameRow): Clock => ({
@@ -58,6 +65,35 @@ const clockFromRow = (row: GameRow): Clock => ({
 });
 
 const opponentOf = (color: Color): Color => (color === "white" ? "black" : "white");
+
+// Row data for a fresh game with a full clock. Solo games have no black player.
+export const newGameData = (
+  timeControlId: TimeControlId,
+  whitePlayerId: string,
+  blackPlayerId: string | null,
+  now: number,
+) => {
+  const clock = createClock(timeControlId, now);
+  return {
+    clock,
+    data: {
+      whitePlayerId,
+      ...(blackPlayerId ? { blackPlayerId } : {}),
+      timeControlId,
+      timeInitialMs: TIME_CONTROLS[timeControlId].initialMs,
+      timeIncrementMs: TIME_CONTROLS[timeControlId].incrementMs,
+      whiteRemainingMs: clock.whiteRemainingMs,
+      blackRemainingMs: clock.blackRemainingMs,
+      lastMoveAt: new Date(clock.lastMoveAt),
+    },
+  };
+};
+
+// In a two-player game each player may only move their own color. Solo games let the owner move both.
+const mayMoveAs = (row: GameRow, userId: string, color: Color): boolean => {
+  if (!row.whitePlayerId || !row.blackPlayerId) return true;
+  return (color === "white" ? row.whitePlayerId : row.blackPlayerId) === userId;
+};
 
 const clockView = (clock: Clock) => ({
   whiteRemainingMs: clock.whiteRemainingMs,
@@ -90,18 +126,8 @@ export const createNewGame = async (req: Request, res: Response) => {
   const timeControlId = isTimeControlId(timeControl) ? timeControl : DEFAULT_TIME_CONTROL;
 
   const game = new ChessGame();
-  const clock = createClock(timeControlId, Date.now());
-  const row = await prisma.game.create({
-    data: {
-      whitePlayerId: getUserId(res),
-      timeControlId,
-      timeInitialMs: TIME_CONTROLS[timeControlId].initialMs,
-      timeIncrementMs: TIME_CONTROLS[timeControlId].incrementMs,
-      whiteRemainingMs: clock.whiteRemainingMs,
-      blackRemainingMs: clock.blackRemainingMs,
-      lastMoveAt: new Date(clock.lastMoveAt),
-    },
-  });
+  const { clock, data } = newGameData(timeControlId, getUserId(res), null, Date.now());
+  const row = await prisma.game.create({ data });
 
   res.json({
     gameId: row.id,
@@ -121,6 +147,7 @@ export const makeMove = async (req: Request, res: Response) => {
   const loaded = await loadOwnedGame(gameId, getUserId(res));
   if (!loaded) return res.status(404).send("Game not found");
   const { row, game, moveCount } = loaded;
+  if (!mayMoveAs(row, getUserId(res), color)) return res.status(403).send("Not your color");
   if (row.status === "finished") return res.status(409).send("Game is over");
 
   const now = Date.now();
@@ -159,6 +186,8 @@ export const makeMove = async (req: Request, res: Response) => {
         blackRemainingMs: update.clock.blackRemainingMs,
         lastMoveAt: new Date(now),
         currentTurn: game.getCurrentTurn(),
+        // Moving counts as turning down a draw offer made by the other side.
+        drawOfferedBy: row.drawOfferedBy === color ? row.drawOfferedBy : null,
         ...ended,
         finishedAt: ended.status === "finished" ? new Date(now) : null,
       },
@@ -207,6 +236,21 @@ const finishGame = (
     },
   });
 
+// Ends the game on time when the side to move has run out of clock. Returns the result, or null if the game goes on.
+const flagIfExpired = async ({ row, game }: LoadedGame, now: number): Promise<{ winner: Color; clock: Clock } | null> => {
+  if (row.status === "finished") return null;
+
+  const clock = clockFromRow(row);
+  const turn = game.getCurrentTurn();
+  if (remainingAt(clock, turn, now) > 0) return null;
+
+  if (turn === "white") clock.whiteRemainingMs = 0;
+  else clock.blackRemainingMs = 0;
+  const winner = opponentOf(turn);
+  await finishGame(row.id, clock, now, { winner, endReason: "timeout" });
+  return { winner, clock };
+};
+
 // Flags the side to move when its clock has run out, without waiting for another move.
 export const timeoutGame = async (req: Request, res: Response) => {
   const { gameId } = (req.body ?? {}) as { gameId?: unknown };
@@ -215,21 +259,12 @@ export const timeoutGame = async (req: Request, res: Response) => {
   }
   const loaded = await loadOwnedGame(gameId, getUserId(res));
   if (!loaded) return res.status(404).send("Game not found");
-  const { row, game } = loaded;
-  if (row.status === "finished") return res.status(409).send("Game is over");
+  if (loaded.row.status === "finished") return res.status(409).send("Game is over");
 
-  const now = Date.now();
-  const clock = clockFromRow(row);
-  const turn = game.getCurrentTurn();
-  if (remainingAt(clock, turn, now) > 0) {
-    return res.status(409).send("Time has not expired");
-  }
+  const flagged = await flagIfExpired(loaded, Date.now());
+  if (!flagged) return res.status(409).send("Time has not expired");
 
-  if (turn === "white") clock.whiteRemainingMs = 0;
-  else clock.blackRemainingMs = 0;
-  const winner = opponentOf(turn);
-  await finishGame(row.id, clock, now, { winner, endReason: "timeout" });
-  res.json({ winner, clock: clockView(clock) });
+  res.json({ winner: flagged.winner, clock: clockView(flagged.clock) });
 }
 
 // 3. Get legal moves for every piece of the side to move → use gameId
@@ -239,4 +274,155 @@ export const getAllLegalMoves = async (req: Request, res: Response) => {
 
   if (!loaded) return res.status(404).send("Game not found");
   res.json({ legalMoves: loaded.game.getLegalMovesForTurn() });
+}
+
+// The color a player has in a two-player game. Solo games have no fixed seat.
+const seatOf = (row: GameRow, userId: string): Color | null => {
+  if (!row.whitePlayerId || !row.blackPlayerId) return null;
+  return row.whitePlayerId === userId ? "white" : "black";
+};
+
+const winnerOf = (result: GameRow["result"]): Color | null =>
+  result === "white_wins" ? "white" : result === "black_wins" ? "black" : null;
+
+const gameView = ({ row, game, moves }: LoadedGame, userId: string, now: number) => {
+  const finished = row.status === "finished";
+  const turn = game.getCurrentTurn();
+  const clock = clockView(clockFromRow(row));
+  // The stored time is from the last move, so the side to move is charged for the time since then.
+  if (!finished) {
+    const left = Math.max(0, remainingAt(clockFromRow(row), turn, now));
+    if (turn === "white") clock.whiteRemainingMs = left;
+    else clock.blackRemainingMs = left;
+  }
+  const lastMove = moves[moves.length - 1];
+
+  return {
+    gameId: row.id,
+    yourColor: seatOf(row, userId),
+    timeControl: row.timeControlId,
+    boardState: game.getBoardState(),
+    currentTurn: turn,
+    status: game.getGameStatus(),
+    finished,
+    result: row.result,
+    winner: winnerOf(row.result),
+    endReason: row.endReason,
+    legalMoves: finished ? [] : game.getLegalMovesForTurn(),
+    moveCount: moves.length,
+    lastMove: lastMove ? { from: lastMove.from, to: lastMove.to } : null,
+    drawOfferedBy: finished ? null : row.drawOfferedBy,
+    players: { white: row.whitePlayer?.username ?? null, black: row.blackPlayer?.username ?? null },
+    clock,
+  };
+};
+
+// 4. Load a game's current state. Clients poll this to see the opponent's moves, and a lapsed clock ends the game here.
+export const getGame = async (req: Request, res: Response) => {
+  const userId = getUserId(res);
+  const now = Date.now();
+
+  let loaded = await loadOwnedGame(req.params.id, userId);
+  if (!loaded) return res.status(404).send("Game not found");
+
+  if (await flagIfExpired(loaded, now)) {
+    loaded = await loadOwnedGame(req.params.id, userId);
+    if (!loaded) return res.status(404).send("Game not found");
+  }
+  res.json(gameView(loaded, userId, now));
+}
+
+type ActiveGame = { loaded: LoadedGame; seat: Color };
+
+// Shared checks for resigning and draw offers: a two-player game that is still running. Sends the error itself.
+const loadActiveTwoPlayerGame = async (req: Request, res: Response): Promise<ActiveGame | null> => {
+  const { gameId } = (req.body ?? {}) as { gameId?: unknown };
+  if (typeof gameId !== "string") {
+    res.status(400).send("Invalid request body");
+    return null;
+  }
+  const loaded = await loadOwnedGame(gameId, getUserId(res));
+  if (!loaded) {
+    res.status(404).send("Game not found");
+    return null;
+  }
+  const seat = seatOf(loaded.row, getUserId(res));
+  if (!seat) {
+    res.status(400).send("Not a two-player game");
+    return null;
+  }
+  if (loaded.row.status === "finished") {
+    res.status(409).send("Game is over");
+    return null;
+  }
+  const flagged = await flagIfExpired(loaded, Date.now());
+  if (flagged) {
+    res.status(409).json({ error: "Time expired", winner: flagged.winner, clock: clockView(flagged.clock) });
+    return null;
+  }
+  return { loaded, seat };
+};
+
+// The conditional updates below only match a running game, so a result that landed first is never overwritten.
+export const resignGame = async (req: Request, res: Response) => {
+  const active = await loadActiveTwoPlayerGame(req, res);
+  if (!active) return;
+  const { loaded, seat } = active;
+
+  const winner = opponentOf(seat);
+  const { count } = await prisma.game.updateMany({
+    where: { id: loaded.row.id, status: "active" },
+    data: {
+      status: "finished",
+      result: resultFor(winner),
+      endReason: "resignation",
+      drawOfferedBy: null,
+      finishedAt: new Date(),
+    },
+  });
+  if (count !== 1) return res.status(409).send("Game is over");
+
+  res.json({ winner });
+}
+
+export const offerDraw = async (req: Request, res: Response) => {
+  const active = await loadActiveTwoPlayerGame(req, res);
+  if (!active) return;
+  const { loaded, seat } = active;
+
+  const { count } = await prisma.game.updateMany({
+    where: { id: loaded.row.id, status: "active", drawOfferedBy: null },
+    data: { drawOfferedBy: seat },
+  });
+  if (count !== 1) return res.status(409).send("A draw offer is already pending");
+
+  res.json({ drawOfferedBy: seat });
+}
+
+export const acceptDraw = async (req: Request, res: Response) => {
+  const active = await loadActiveTwoPlayerGame(req, res);
+  if (!active) return;
+  const { loaded, seat } = active;
+
+  const { count } = await prisma.game.updateMany({
+    where: { id: loaded.row.id, status: "active", drawOfferedBy: opponentOf(seat) },
+    data: { status: "finished", result: "draw", endReason: "agreement", drawOfferedBy: null, finishedAt: new Date() },
+  });
+  if (count !== 1) return res.status(409).send("There is no draw offer to accept");
+
+  res.json({ result: "draw" });
+}
+
+export const declineDraw = async (req: Request, res: Response) => {
+  const active = await loadActiveTwoPlayerGame(req, res);
+  if (!active) return;
+  const { loaded, seat } = active;
+
+  const { count } = await prisma.game.updateMany({
+    where: { id: loaded.row.id, status: "active", drawOfferedBy: opponentOf(seat) },
+    data: { drawOfferedBy: null },
+  });
+  if (count !== 1) return res.status(409).send("There is no draw offer to decline");
+
+  res.json({ drawOfferedBy: null });
 }
