@@ -6,6 +6,8 @@ import HomeActions from "../components/Home/HomeActions";
 import GameHistory from "../components/Home/GameHistory";
 import { useAccount } from "../lib/account";
 import { useGames } from "../lib/history";
+import InviteBox from "../components/Home/inviteBox";
+import InviteForm from "../components/Home/inviteForm";
 
 const HISTORY_PAGE_SIZE = 10;
 
@@ -31,6 +33,8 @@ const Home = () => {
         </section>
 
         <HomeActions canInviteFriend={canInviteFriend} />
+        {canInviteFriend && <InviteBox />}
+        <InviteForm />
 
         {!loading && account && !canInviteFriend && (
           <p className="text-sm text-gray-400">Choose a username in Settings to invite friends.</p>

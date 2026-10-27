@@ -32,7 +32,7 @@ const Piece = ({ pieceType, color, theme, offset }: PieceProps) => {
   return (
     <img
       ref={imgRef}
-      className="w-full h-full cursor-pointer z-10 relative"
+      className="absolute inset-0 w-full h-full cursor-pointer z-10"
       style={{
         transform,
         transition: settled ? "transform 200ms ease-out" : "none",

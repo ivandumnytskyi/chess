@@ -13,6 +13,8 @@ const inviteSelect = {
   id: true,
   timeControlId: true,
   senderColor: true,
+  status: true,
+  gameId: true,
   createdAt: true,
   expiresAt: true,
   sender: { select: { username: true } },
@@ -23,6 +25,8 @@ type InviteRow = {
   id: string;
   timeControlId: string;
   senderColor: "white" | "black" | null;
+  status: "pending" | "accepted" | "declined" | "cancelled" | "expired";
+  gameId: string | null;
   createdAt: Date;
   expiresAt: Date;
   sender: { username: string | null };
@@ -35,6 +39,8 @@ const toInviteView = (invite: InviteRow) => ({
   to: invite.recipient.username,
   timeControlId: invite.timeControlId,
   color: invite.senderColor ?? "random",
+  status: invite.status,
+  gameId: invite.gameId,
   createdAt: invite.createdAt,
   expiresAt: invite.expiresAt,
 });
@@ -115,16 +121,25 @@ export async function sendInvite(req: Request, res: Response): Promise<void> {
 
 export async function listInvites(_req: Request, res: Response): Promise<void> {
   const userId = getUserId(res);
-  const open = { status: "pending", expiresAt: { gt: new Date() } } as const;
+  const now = new Date();
+  // Pending invites that have not lapsed, plus accepted invites whose game is still running,
+  // so both players can get back into the game from the home page.
+  const visibleFor = (playerWhere: { senderId: string } | { recipientId: string }) => ({
+    ...playerWhere,
+    OR: [
+      { status: "pending" as const, expiresAt: { gt: now } },
+      { status: "accepted" as const, game: { status: "active" as const } },
+    ],
+  });
 
   const [incoming, outgoing] = await Promise.all([
     prisma.gameInvite.findMany({
-      where: { ...open, recipientId: userId },
+      where: visibleFor({ recipientId: userId }),
       orderBy: { createdAt: "desc" },
       select: inviteSelect,
     }),
     prisma.gameInvite.findMany({
-      where: { ...open, senderId: userId },
+      where: visibleFor({ senderId: userId }),
       orderBy: { createdAt: "desc" },
       select: inviteSelect,
     }),
