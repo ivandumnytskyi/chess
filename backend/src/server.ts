@@ -3,7 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import router from "./routs/route"
 
-const FRONTEND_ORIGIN = "http://localhost:5173";
+const FRONTEND_ORIGIN = "https://chess-coral-kappa.vercel.app";
 
 const app: Express = express();
 app.use(cors({

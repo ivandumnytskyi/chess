@@ -10,7 +10,7 @@ import TimeControlPicker from "../components/Game/TimeControlPicker";
 import { authorizedFetch } from "../lib/authorization";
 import { DEFAULT_TIME_CONTROL, incrementFor, type TimeControlId } from "../constants/timeControls";
 
-const API_URL = "http://localhost:3000/api";
+const API_URL = "https://chess-g0wh.onrender.com/api";
 
 type ServerClock = { whiteRemainingMs: number; blackRemainingMs: number };
 
