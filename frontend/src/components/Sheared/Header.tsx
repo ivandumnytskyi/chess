@@ -12,7 +12,6 @@ const Header = ({ onSettingsClick }: HeaderProps) => {
       <h1><a href="/" className="hover:underline">Chess Pet project</a></h1>
       <nav>
         <ul className="flex space-x-4">
-          <li><a href="/game" className="hover:underline">Game</a></li>
           {isAuthenticated === false ? (
             <>
               <li><a href="/signup" className="hover:underline">Sign up</a></li>

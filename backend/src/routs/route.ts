@@ -2,6 +2,7 @@ import { Router } from "express";
 import { createNewGame, makeMove, timeoutGame, getAllLegalMoves } from "../controllers/GameController";
 import { login, logout, signup, exchangeSession } from "../controllers/AuthController";
 import { getProfile, changeUsername } from "../controllers/ProfileController";
+import { listGames } from "../controllers/GameHistoryController";
 import { requireAuth } from "../../middleware/requireAuth";
 
 
@@ -26,6 +27,8 @@ router.post("/game", requireAuth, createNewGame);
 router.get("/profile", requireAuth, getProfile);
 
 router.patch("/profile/username", requireAuth, changeUsername);
+
+router.get("/games", requireAuth, listGames);
 
 router.post("/game/move", requireAuth, makeMove);
 

@@ -15,6 +15,7 @@ const {
   mockProfileUpdate,
   mockGameCreate,
   mockGameFindFirst,
+  mockGameFindMany,
   mockGameUpdate,
   mockMoveCreate,
   mockTransaction,
@@ -75,6 +76,7 @@ const {
     mockProfileUpdate: vi.fn(),
     mockGameCreate,
     mockGameFindFirst,
+    mockGameFindMany: vi.fn(),
     mockGameUpdate,
     mockMoveCreate,
     mockTransaction,
@@ -94,7 +96,7 @@ vi.mock("../lib/supabase", () => ({
 vi.mock("../lib/prisma", () => ({
   prisma: {
     profile: { upsert: mockProfileUpsert, findUnique: mockProfileFindUnique, update: mockProfileUpdate },
-    game: { create: mockGameCreate, findFirst: mockGameFindFirst, update: mockGameUpdate },
+    game: { create: mockGameCreate, findFirst: mockGameFindFirst, findMany: mockGameFindMany, update: mockGameUpdate },
     move: { create: mockMoveCreate },
     $transaction: mockTransaction,
   },
@@ -119,6 +121,7 @@ beforeEach(() => {
   mockRefreshSession.mockResolvedValue({ data: { user: null, session: null }, error: { message: "invalid refresh token" } });
   mockProfileUpsert.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id }));
   mockProfileFindUnique.mockResolvedValue(null);
+  mockGameFindMany.mockResolvedValue([]);
   mockProfileUpdate.mockImplementation(async ({ data }: { data: { username: string } }) => ({ username: data.username }));
   fakeGames.clear();
 });
@@ -459,6 +462,129 @@ describe("verified user cache", () => {
 
     expect(res.status).toBe(401);
     expect(getUserCallsFor("forged")).toBe(2);
+  });
+});
+
+describe("GET /api/games", () => {
+  const USER_ID = "user-b";
+  const OPPONENT_ID = "user-opponent";
+
+  const gameRow = (id: string, color: "white" | "black", result: string | null) => ({
+    id,
+    whitePlayerId: color === "white" ? USER_ID : OPPONENT_ID,
+    timeControlId: "blitz-5-3",
+    status: result ? "finished" : "active",
+    result,
+    endReason: result ? "checkmate" : null,
+    createdAt: new Date("2030-01-01T00:00:00Z"),
+    finishedAt: result ? new Date("2030-01-01T00:10:00Z") : null,
+    whitePlayer: { username: color === "white" ? "bee" : "opp" },
+    blackPlayer: { username: color === "white" ? "opp" : "bee" },
+  });
+
+  const ID_1 = "11111111-1111-4111-8111-111111111111";
+  const ID_2 = "22222222-2222-4222-8222-222222222222";
+  const ID_3 = "33333333-3333-4333-8333-333333333333";
+
+  const listGames = (query = "") =>
+    fetch(`${baseUrl}/games${query}`, { headers: sessionCookie("token-b") });
+
+  it.each([
+    ["white", "white_wins", "win"],
+    ["white", "black_wins", "loss"],
+    ["black", "black_wins", "win"],
+    ["black", "white_wins", "loss"],
+    ["white", "draw", "draw"],
+    ["black", "draw", "draw"],
+    ["white", null, null],
+  ] as const)("maps %s player with result %s to outcome %s", async (color, result, outcome) => {
+    mockGameFindMany.mockResolvedValue([gameRow(ID_1, color, result)]);
+
+    const res = await listGames();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.games[0].outcome).toBe(outcome);
+    expect(body.games[0].color).toBe(color);
+  });
+
+  it("returns the opponent username and game fields", async () => {
+    mockGameFindMany.mockResolvedValue([gameRow(ID_1, "white", "white_wins")]);
+
+    const body = await (await listGames()).json();
+
+    expect(body.games[0]).toMatchObject({
+      id: ID_1,
+      color: "white",
+      opponentUsername: "opp",
+      timeControlId: "blitz-5-3",
+      status: "finished",
+      result: "white_wins",
+      endReason: "checkmate",
+      outcome: "win",
+    });
+    expect(body).toHaveProperty("nextCursor", null);
+  });
+
+  it("queries only the user's finished games newest first with one extra row", async () => {
+    await listGames();
+
+    expect(mockGameFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: "finished", OR: [{ whitePlayerId: USER_ID }, { blackPlayerId: USER_ID }] },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 21,
+      }),
+    );
+  });
+
+  it("returns a nextCursor when another page exists", async () => {
+    mockGameFindMany.mockResolvedValue([
+      gameRow(ID_1, "white", "white_wins"),
+      gameRow(ID_2, "white", "draw"),
+      gameRow(ID_3, "black", "draw"),
+    ]);
+
+    const body = await (await listGames("?limit=2")).json();
+
+    expect(body.games.map((game: { id: string }) => game.id)).toEqual([ID_1, ID_2]);
+    expect(body.nextCursor).toBe(ID_2);
+  });
+
+  it("returns a null nextCursor on the last page", async () => {
+    mockGameFindMany.mockResolvedValue([gameRow(ID_1, "white", "white_wins")]);
+
+    const body = await (await listGames("?limit=2")).json();
+
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it("continues from the cursor by skipping the cursor row", async () => {
+    await listGames(`?limit=5&cursor=${ID_2}`);
+
+    expect(mockGameFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ cursor: { id: ID_2 }, skip: 1, take: 6 }),
+    );
+  });
+
+  it.each(["0", "51", "abc", "-1", "2.5"])("returns 400 for limit %s", async (limit) => {
+    const res = await listGames(`?limit=${limit}`);
+
+    expect(res.status).toBe(400);
+    expect(mockGameFindMany).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for a cursor that is not a game id", async () => {
+    const res = await listGames("?cursor=not-a-uuid");
+
+    expect(res.status).toBe(400);
+    expect(mockGameFindMany).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 without a session cookie", async () => {
+    const res = await fetch(`${baseUrl}/games`, { headers: {} });
+
+    expect(res.status).toBe(401);
   });
 });
 
