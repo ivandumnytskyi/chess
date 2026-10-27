@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export const API_URL = "https://chess-g0wh.onrender.com/api";
+export const API_URL = "/api";;
 
 const AUTH_CHANGED_EVENT = "auth-changed";
 
