@@ -25,7 +25,7 @@ const Board = ({ squares, themeIndex, handleSquareClick, selectedPiece, legalMov
                   key={colIndex}
                   id={`${rowIndex}-${colIndex}`}
                   onClick={() => handleSquareClick(rowIndex, colIndex)}
-                  className={`aspect-square h-full relative min-h-0 min-w-0 overflow-hidden ${
+                  className={`aspect-square h-full relative min-h-0 min-w-0 ${
                     isBlack
                       ? boardThemes[themeIndex].dark
                       : boardThemes[themeIndex].light
