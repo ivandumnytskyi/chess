@@ -10,5 +10,6 @@ dist/
 .agents
 .windsurf
 skills-lock.json
+supabase/.*
 
 /backend/generated/prisma

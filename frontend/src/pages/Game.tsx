@@ -9,6 +9,7 @@ import Promotion from "../components/Game/Promotion";
 import TimeControlPicker from "../components/Game/TimeControlPicker";
 import { authorizedFetch } from "../lib/authorization";
 import { DEFAULT_TIME_CONTROL, incrementFor, type TimeControlId } from "../constants/timeControls";
+import { subscribeToGame } from "../lib/rtChanelsSB";
 
 const API_URL = "/api";
 
@@ -79,8 +80,6 @@ type GameStateView = {
   clock: ServerClock;
 };
 
-const OPPONENT_POLL_MS = 1000;
-
 async function fetchGame(gameId: string): Promise<GameStateView> {
   const res = await authorizedFetch(`${API_URL}/game/${gameId}`);
   if (!res.ok) throw new Error(res.status === 404 ? "Game not found" : "Could not load game");
@@ -124,8 +123,6 @@ function Game() {
   const resolvedWinner: Color | undefined =
     game?.winner ?? (timedOut && game ? (game.currentTurn === "white" ? "black" : "white") : undefined);
   const gameId = game?.gameId;
-  const waitingForOpponent = routeGameId !== undefined && seat !== null && game !== null && !isOver && game.currentTurn !== seat;
-
   const applyServerView = useCallback((view: GameStateView) => {
     setGame({
       gameId: view.gameId,
@@ -138,6 +135,20 @@ function Game() {
     setMovesByPiece(toMovesByPiece(view.legalMoves));
     setSeat(view.yourColor);
   }, []);
+
+  // Reloads the full game and animates a move the board has not shown yet. Skipped while this player's own move is in flight, since its response updates the board.
+  const syncFromServer = useCallback(
+    async (gameId: string) => {
+      if (moveInFlight.current) return;
+      const view = await fetchGame(gameId);
+      if (view.moveCount !== moveCountRef.current) {
+        moveCountRef.current = view.moveCount;
+        setLastMove(view.lastMove ? { ...view.lastMove, id: Date.now() } : null);
+      }
+      applyServerView(view);
+    },
+    [applyServerView],
+  );
 
   // Opens the game from the URL: the board, the clocks and this player's color.
   useEffect(() => {
@@ -157,26 +168,6 @@ function Game() {
       cancelled = true;
     };
   }, [routeGameId, applyServerView]);
-
-  // While the opponent is thinking, picks up their move from the server.
-  useEffect(() => {
-    if (!routeGameId || !waitingForOpponent) return;
-    const id = setInterval(() => {
-      if (moveInFlight.current || document.visibilityState !== "visible") return;
-      fetchGame(routeGameId)
-        .then((view) => {
-          if (view.moveCount !== moveCountRef.current) {
-            moveCountRef.current = view.moveCount;
-            setLastMove(view.lastMove ? { ...view.lastMove, id: Date.now() } : null);
-          }
-          applyServerView(view);
-        })
-        .catch(() => {
-          // The next tick tries again.
-        });
-    }, OPPONENT_POLL_MS);
-    return () => clearInterval(id);
-  }, [routeGameId, waitingForOpponent, applyServerView]);
 
   // Re-render every 100ms so the side to move's clock counts down between server updates.
   useEffect(() => {
@@ -211,6 +202,26 @@ function Game() {
     };
     void reportTimeout();
   }, [gameId, timedOut]);
+
+  // Supabase pushes changes, so the opponent's move shows without polling. A turn or clock change updates
+  // the clocks directly; a new move reloads the board, since the game row does not contain squares.
+  useEffect(() => {
+    if (!routeGameId) return;
+    const refresh = () => {
+      syncFromServer(routeGameId).catch(() => undefined);
+    };
+    return subscribeToGame(routeGameId, {
+      onGame: (row) => {
+        if (row.status !== "active") {
+          refresh();
+          return;
+        }
+        setGame((prev) => (prev ? { ...prev, currentTurn: row.currentTurn } : prev));
+        setClock({ whiteRemainingMs: row.whiteRemainingMs, blackRemainingMs: row.blackRemainingMs, syncedAt: Date.now() });
+      },
+      onMove: refresh,
+    });
+  }, [routeGameId, syncFromServer]);
 
   const squares = game?.squares ?? [];
 
