@@ -8,6 +8,7 @@ import router from "../src/routs/route";
 const {
   mockGetUser,
   mockRefreshSession,
+  mockBroadcastGameMove,
   mockSignIn,
   mockSignUp,
   mockProfileUpsert,
@@ -166,6 +167,7 @@ const {
   return {
     mockGetUser: vi.fn(),
     mockRefreshSession: vi.fn(),
+    mockBroadcastGameMove: vi.fn(async () => undefined),
     mockSignIn: vi.fn(),
     mockSignUp: vi.fn(),
     mockProfileUpsert: vi.fn(),
@@ -191,6 +193,7 @@ const {
   };
 });
 vi.mock("../lib/supabase", () => ({
+  broadcastGameMove: mockBroadcastGameMove,
   supabase: {
     auth: {
       getUser: mockGetUser,
@@ -236,6 +239,7 @@ const USERS: Record<string, { id: string; email: string }> = {
 };
 
 beforeEach(() => {
+  mockBroadcastGameMove.mockClear();
   mockGetUser.mockImplementation(async (token: string) => {
     const user = USERS[token];
     return user
@@ -373,6 +377,7 @@ describe("POST /api/game/move", () => {
 
     expect(res.status).toBe(200);
     expect(body.currentTurn).toBe("black");
+    expect(mockBroadcastGameMove).toHaveBeenCalledWith("token-a", gameId, 1, e2e4);
   });
 
   it("returns the new status and legal moves for the side to move", async () => {
@@ -1807,4 +1812,3 @@ describe("game ownership", () => {
     expect(body.legalMoves).toHaveLength(10);
   });
 });
-

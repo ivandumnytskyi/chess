@@ -13,6 +13,7 @@ import {
   type TimeControlId,
 } from "../game/timeControls";
 import { prisma } from "../../lib/prisma";
+import { broadcastGameMove } from "../../lib/supabase";
 import { Prisma, type Game as GameRow } from "../../generated/prisma/client";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -194,6 +195,14 @@ export const makeMove = async (req: Request, res: Response) => {
       },
     }),
   ]);
+
+  const realtimeAccessToken: unknown = res.locals.realtimeAccessToken;
+  if (typeof realtimeAccessToken === "string") {
+    void broadcastGameMove(realtimeAccessToken, row.id, moveCount + 1, moveData)
+      .catch((error: unknown) => {
+        console.error("Could not broadcast validated game move", error);
+      });
+  }
 
   res.json({
     boardState: game.getBoardState(),

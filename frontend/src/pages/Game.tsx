@@ -151,6 +151,7 @@ function Game() {
   const navigate = useNavigate();
   // Number of moves the board currently shows, so polling only animates a move it has not shown yet.
   const moveCountRef = useRef(0);
+  const syncRequestRef = useRef(0);
 
   const legalMoves = selectedPiece
     ? (movesByPiece[pieceKey(selectedPiece)] ?? [])
@@ -204,8 +205,16 @@ function Game() {
   const syncFromServer = useCallback(
     async (gameId: string) => {
       if (moveInFlight.current) return;
+      const requestId = ++syncRequestRef.current;
       const view = await fetchGame(gameId);
-      if (view.moveCount !== moveCountRef.current) {
+      if (
+        moveInFlight.current ||
+        requestId !== syncRequestRef.current ||
+        view.moveCount < moveCountRef.current
+      ) {
+        return;
+      }
+      if (view.moveCount > moveCountRef.current) {
         moveCountRef.current = view.moveCount;
         setLastMove(
           view.lastMove ? { ...view.lastMove, id: Date.now() } : null,
@@ -220,9 +229,12 @@ function Game() {
   useEffect(() => {
     if (!routeGameId) return;
     let cancelled = false;
+    moveCountRef.current = 0;
+    syncRequestRef.current += 1;
     fetchGame(routeGameId)
       .then((view) => {
         if (cancelled) return;
+        if (view.moveCount < moveCountRef.current) return;
         moveCountRef.current = view.moveCount;
         applyServerView(view);
         setLastMove(
@@ -293,13 +305,15 @@ function Game() {
   useEffect(() => {
     if (!routeGameId) return;
     const refresh = () => {
-      syncFromServer(routeGameId).catch(() => undefined);
+      syncFromServer(routeGameId).catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Could not load game");
+      });
     };
     let cancelled = false;
     let stop: (() => void) | undefined;
     void subscribeToGame(routeGameId, {
       onGame: (row) => {
-        if (row.status !== "active") {
+        if (row.status === "finished") {
           refresh();
           return;
         }
@@ -312,26 +326,26 @@ function Game() {
           syncedAt: Date.now(),
         });
       },
-      onMove: (row) => {
-        const move = row.move as unknown as {
-          from?: Position;
-          to?: Position;
-        } | null;
+      onMove: ({ ply, move }) => {
         if (
-          move?.from &&
-          move?.to &&
-          row.ply === moveCountRef.current + 1 &&
+          ply === moveCountRef.current + 1 &&
           !moveInFlight.current
         ) {
-          moveCountRef.current = row.ply;
+          moveCountRef.current = ply;
           showRemoteMove(move.from, move.to);
+          refresh();
+        } else if (ply > moveCountRef.current + 1) {
+          refresh();
         }
-        refresh();
       },
       onSubscribed: refresh,
     }).then((unsubscribe) => {
       if (cancelled) unsubscribe();
       else stop = unsubscribe;
+    }).catch((err: unknown) => {
+      if (!cancelled) {
+        setError(err instanceof Error ? err.message : "Could not subscribe to game");
+      }
     });
     return () => {
       cancelled = true;

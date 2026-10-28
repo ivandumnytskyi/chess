@@ -45,15 +45,18 @@ export async function requireAuth(
   }
 
   let user: User | null = null;
+  let validAccessToken: string | null = null;
 
   if (typeof accessToken === "string") {
     const cached = verifiedUsers.get(accessToken);
     if (cached && cached.expiresAt > Date.now()) {
       user = cached.user;
+      validAccessToken = accessToken;
     } else {
       const { data, error } = await supabase.auth.getUser(accessToken);
       if (!error && data.user) {
         user = data.user;
+        validAccessToken = accessToken;
         rememberVerifiedUser(accessToken, data.user);
       }
     }
@@ -68,6 +71,7 @@ export async function requireAuth(
         expiresIn: data.session.expires_in,
       });
       user = data.user;
+      validAccessToken = data.session.access_token;
     }
   }
 
@@ -88,6 +92,7 @@ export async function requireAuth(
   }
 
   res.locals.user = user;
+  res.locals.realtimeAccessToken = validAccessToken;
 
   next();
 }
