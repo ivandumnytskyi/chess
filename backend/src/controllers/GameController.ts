@@ -1,4 +1,5 @@
 import { type Request, type Response } from "express";
+import { performance } from "node:perf_hooks";
 import type { User } from "@supabase/supabase-js";
 import { ChessGame } from "../game/ChessGame";
 import type { Color, GameStatus, MoveData, Position } from "../types/chess";
@@ -142,11 +143,14 @@ export const createNewGame = async (req: Request, res: Response) => {
 
 // 2. Make move → use gameId to find game
 export const makeMove = async (req: Request, res: Response) => {
+  const requestStartedAt = performance.now();
   const { gameId, moveData, color } = (req.body ?? {}) as { gameId?: unknown; moveData?: unknown; color?: unknown };
   if (typeof gameId !== "string" || !isColor(color) || !isMoveData(moveData)) {
     return res.status(400).send("Invalid request body");
   }
+  const loadStartedAt = performance.now();
   const loaded = await loadOwnedGame(gameId, getUserId(res));
+  const loadGameMs = performance.now() - loadStartedAt;
   if (!loaded) return res.status(404).send("Game not found");
   const { row, game, moveCount } = loaded;
   if (!mayMoveAs(row, getUserId(res), color)) return res.status(403).send("Not your color");
@@ -160,6 +164,7 @@ export const makeMove = async (req: Request, res: Response) => {
     return res.status(409).json({ error: "Time expired", winner, clock: clockView(update.clock) });
   }
 
+  const moveStartedAt = performance.now();
   try {
     game.makeMove(moveData, color, moveData.promotion);
   } catch (err) {
@@ -168,6 +173,8 @@ export const makeMove = async (req: Request, res: Response) => {
 
   const status = game.getGameStatus();
   const ended = endOfGame(status, color);
+  const moveProcessingMs = performance.now() - moveStartedAt;
+  const transactionStartedAt = performance.now();
   await prisma.$transaction([
     prisma.move.create({
       data: {
@@ -195,22 +202,42 @@ export const makeMove = async (req: Request, res: Response) => {
       },
     }),
   ]);
+  const transactionMs = performance.now() - transactionStartedAt;
 
   const realtimeAccessToken: unknown = res.locals.realtimeAccessToken;
   if (typeof realtimeAccessToken === "string") {
     void broadcastGameMove(realtimeAccessToken, row.id, moveCount + 1, moveData)
       .catch((error: unknown) => {
-        console.error("Could not broadcast validated game move", error);
+        console.error(JSON.stringify({
+          event: "game_move_broadcast_request_failed",
+          gameId: row.id,
+          ply: moveCount + 1,
+          error: error instanceof Error ? error.message : String(error),
+        }));
       });
   }
 
+  const responseStartedAt = performance.now();
+  const boardState = game.getBoardState();
+  const legalMoves = game.getLegalMovesForTurn();
+  const responsePreparationMs = performance.now() - responseStartedAt;
   res.json({
-    boardState: game.getBoardState(),
+    boardState,
     currentTurn: game.getCurrentTurn(),
     status,
-    legalMoves: game.getLegalMovesForTurn(),
+    legalMoves,
     clock: clockView(update.clock),
   });
+  console.info(JSON.stringify({
+    event: "game_move_timing",
+    gameId: row.id,
+    ply: moveCount + 1,
+    loadGameMs: Math.round(loadGameMs),
+    moveProcessingMs: Math.round(moveProcessingMs),
+    transactionMs: Math.round(transactionMs),
+    responsePreparationMs: Math.round(responsePreparationMs),
+    totalMs: Math.round(performance.now() - requestStartedAt),
+  }));
 }
 
 // Maps the board's end state to the stored result. Active and check games return no end fields.
