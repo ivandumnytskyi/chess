@@ -38,6 +38,7 @@ const loadOwnedGame = async (gameId: unknown, userId: string): Promise<LoadedGam
       id: gameId,
       OR: [{ whitePlayerId: userId }, { blackPlayerId: userId }],
     },
+    relationLoadStrategy: "join",
     include: {
       moves: { orderBy: { ply: "asc" } },
       whitePlayer: { select: { username: true } },
@@ -322,14 +323,19 @@ export const getGame = async (req: Request, res: Response) => {
   const userId = getUserId(res);
   const now = Date.now();
 
+  const t0 = performance.now();
   let loaded = await loadOwnedGame(req.params.id, userId);
   if (!loaded) return res.status(404).send("Game not found");
 
+  const t1 = performance.now();
   if (await flagIfExpired(loaded, now)) {
     loaded = await loadOwnedGame(req.params.id, userId);
     if (!loaded) return res.status(404).send("Game not found");
   }
-  res.json(gameView(loaded, userId, now));
+
+  const t2 = performance.now();
+  const view = gameView(loaded, userId, now);
+  res.json(view);
 }
 
 type ActiveGame = { loaded: LoadedGame; seat: Color };

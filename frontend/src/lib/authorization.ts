@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export const API_URL = "/api";;
+export const API_URL = "/api";
 
 const AUTH_CHANGED_EVENT = "auth-changed";
 

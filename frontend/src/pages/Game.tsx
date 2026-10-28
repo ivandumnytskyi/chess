@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import type { GameView, Cell, Color, ClockState, GameStatus, MoveData, Position, PromotionPiece } from "../types";
+import type {
+  GameView,
+  Cell,
+  Color,
+  ClockState,
+  GameStatus,
+  MoveData,
+  Position,
+  PromotionPiece,
+} from "../types";
 import { useTheme } from "../context/ThemeContext";
 import Board from "../components/Game/Board";
 import GameOverlay from "../components/Game/GameOverlay";
@@ -8,23 +17,39 @@ import Clock from "../components/Game/Clock";
 import Promotion from "../components/Game/Promotion";
 import TimeControlPicker from "../components/Game/TimeControlPicker";
 import { authorizedFetch } from "../lib/authorization";
-import { DEFAULT_TIME_CONTROL, incrementFor, type TimeControlId } from "../constants/timeControls";
+import {
+  DEFAULT_TIME_CONTROL,
+  incrementFor,
+  type TimeControlId,
+} from "../constants/timeControls";
 import { subscribeToGame } from "../lib/rtChanelsSB";
 
 const API_URL = "/api";
 
 type ServerClock = { whiteRemainingMs: number; blackRemainingMs: number };
 
-async function createGame(timeControl: TimeControlId): Promise<{ game: GameView; clock: ClockState }> {
+async function createGame(
+  timeControl: TimeControlId,
+): Promise<{ game: GameView; clock: ClockState }> {
   const res = await authorizedFetch(`${API_URL}/game`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ timeControl }),
   });
   if (!res.ok) throw new Error("Could not start game");
-  const data: { gameId: string; boardState: { squares: Cell[][] }; currentTurn: Color; clock: ServerClock } = await res.json();
+  const data: {
+    gameId: string;
+    boardState: { squares: Cell[][] };
+    currentTurn: Color;
+    clock: ServerClock;
+  } = await res.json();
   return {
-    game: { gameId: data.gameId, squares: data.boardState.squares, currentTurn: data.currentTurn, status: "active" },
+    game: {
+      gameId: data.gameId,
+      squares: data.boardState.squares,
+      currentTurn: data.currentTurn,
+      status: "active",
+    },
     clock: { ...data.clock, syncedAt: Date.now() },
   };
 }
@@ -42,10 +67,15 @@ type BoardSnapshot = {
 };
 
 // Castling, en passant and promotion change more than the two squares, so they wait for the server.
-const isSimpleMove = (squares: Cell[][], from: Position, to: Position): boolean => {
+const isSimpleMove = (
+  squares: Cell[][],
+  from: Position,
+  to: Position,
+): boolean => {
   const piece = squares[from.row][from.col];
   if (!piece) return false;
-  if (piece.pieceType === "king" && Math.abs(to.col - from.col) === 2) return false;
+  if (piece.pieceType === "king" && Math.abs(to.col - from.col) === 2)
+    return false;
   if (piece.pieceType === "pawn") {
     const isDiagonal = from.col !== to.col;
     const isCapture = squares[to.row][to.col] !== null;
@@ -60,8 +90,12 @@ type PieceMoves = { from: Position; moves: Position[] };
 const toMovesByPiece = (entries: PieceMoves[]): Record<string, Position[]> =>
   Object.fromEntries(entries.map(({ from, moves }) => [pieceKey(from), moves]));
 
-async function fetchAllLegalMoves(gameId: string): Promise<Record<string, Position[]>> {
-  const res = await authorizedFetch(`${API_URL}/game/all-legal-moves?gameId=${gameId}`);
+async function fetchAllLegalMoves(
+  gameId: string,
+): Promise<Record<string, Position[]>> {
+  const res = await authorizedFetch(
+    `${API_URL}/game/all-legal-moves?gameId=${gameId}`,
+  );
   const data: { legalMoves: PieceMoves[] } = await res.json();
   return toMovesByPiece(data.legalMoves);
 }
@@ -82,22 +116,35 @@ type GameStateView = {
 
 async function fetchGame(gameId: string): Promise<GameStateView> {
   const res = await authorizedFetch(`${API_URL}/game/${gameId}`);
-  if (!res.ok) throw new Error(res.status === 404 ? "Game not found" : "Could not load game");
+  if (!res.ok)
+    throw new Error(
+      res.status === 404 ? "Game not found" : "Could not load game",
+    );
   return res.json();
 }
 
 function Game() {
   const { themeIndex, pieceTheme } = useTheme();
-  
+
   const [selectedPiece, setSelectedPiece] = useState<Position | null>(null);
   const [game, setGame] = useState<GameView | null>(null);
-  const [movesByPiece, setMovesByPiece] = useState<Record<string, Position[]>>({});
+  const [movesByPiece, setMovesByPiece] = useState<Record<string, Position[]>>(
+    {},
+  );
   const [error, setError] = useState<string | null>(null);
-  const [timeControl, setTimeControl] = useState<TimeControlId>(DEFAULT_TIME_CONTROL);
+  const [timeControl, setTimeControl] =
+    useState<TimeControlId>(DEFAULT_TIME_CONTROL);
   const [clock, setClock] = useState<ClockState | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [lastMove, setLastMove] = useState<{ from: Position; to: Position; id: number } | null>(null);
-  const [pendingPromotion, setPendingPromotion] = useState<{ from: Position; to: Position } | null>(null);
+  const [lastMove, setLastMove] = useState<{
+    from: Position;
+    to: Position;
+    id: number;
+  } | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<{
+    from: Position;
+    to: Position;
+  } | null>(null);
   // Set in an online game to the side this player controls; null for a local game where one player moves both sides.
   const [seat, setSeat] = useState<Color | null>(null);
   const { id: routeGameId } = useParams<{ id: string }>();
@@ -105,23 +152,40 @@ function Game() {
   // Number of moves the board currently shows, so polling only animates a move it has not shown yet.
   const moveCountRef = useRef(0);
 
-  const legalMoves = selectedPiece ? movesByPiece[pieceKey(selectedPiece)] ?? [] : [];
-  const serverOver = game ? Boolean(game.winner) || (game.status !== "active" && game.status !== "check") : false;
+  const legalMoves = selectedPiece
+    ? (movesByPiece[pieceKey(selectedPiece)] ?? [])
+    : [];
+  const serverOver = game
+    ? Boolean(game.winner) ||
+      (game.status !== "active" && game.status !== "check")
+    : false;
   const timeoutRequested = useRef(false);
   const moveInFlight = useRef(false);
 
   const remainingFor = (color: Color): number => {
     if (!clock) return 0;
-    const base = color === "white" ? clock.whiteRemainingMs : clock.blackRemainingMs;
+    const base =
+      color === "white" ? clock.whiteRemainingMs : clock.blackRemainingMs;
     const running = !serverOver && game?.currentTurn === color;
-    return running ? Math.max(0, base - Math.max(0, now - clock.syncedAt)) : base;
+    return running
+      ? Math.max(0, base - Math.max(0, now - clock.syncedAt))
+      : base;
   };
 
   // The side to move has run out of time locally; the server is told so the result is recorded.
-  const timedOut = game !== null && clock !== null && !serverOver && remainingFor(game.currentTurn) === 0;
+  const timedOut =
+    game !== null &&
+    clock !== null &&
+    !serverOver &&
+    remainingFor(game.currentTurn) === 0;
   const isOver = serverOver || timedOut;
   const resolvedWinner: Color | undefined =
-    game?.winner ?? (timedOut && game ? (game.currentTurn === "white" ? "black" : "white") : undefined);
+    game?.winner ??
+    (timedOut && game
+      ? game.currentTurn === "white"
+        ? "black"
+        : "white"
+      : undefined);
   const gameId = game?.gameId;
   const applyServerView = useCallback((view: GameStateView) => {
     setGame({
@@ -143,7 +207,9 @@ function Game() {
       const view = await fetchGame(gameId);
       if (view.moveCount !== moveCountRef.current) {
         moveCountRef.current = view.moveCount;
-        setLastMove(view.lastMove ? { ...view.lastMove, id: Date.now() } : null);
+        setLastMove(
+          view.lastMove ? { ...view.lastMove, id: Date.now() } : null,
+        );
       }
       applyServerView(view);
     },
@@ -159,10 +225,13 @@ function Game() {
         if (cancelled) return;
         moveCountRef.current = view.moveCount;
         applyServerView(view);
-        setLastMove(view.lastMove ? { ...view.lastMove, id: Date.now() } : null);
+        setLastMove(
+          view.lastMove ? { ...view.lastMove, id: Date.now() } : null,
+        );
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load game");
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : "Could not load game");
       });
     return () => {
       cancelled = true;
@@ -205,23 +274,70 @@ function Game() {
 
   // Supabase pushes changes, so the opponent's move shows without polling. A turn or clock change updates
   // the clocks directly; a new move reloads the board, since the game row does not contain squares.
+  const showRemoteMove = useCallback((from: Position, to: Position) => {
+    setGame((prev) => {
+      if (!prev || !prev.squares[from.row]?.[from.col]) return prev;
+      const squares = prev.squares.map((r) => [...r]);
+      squares[to.row][to.col] = squares[from.row][from.col];
+      squares[from.row][from.col] = null;
+      return {
+        ...prev,
+        squares,
+        currentTurn: prev.currentTurn === "white" ? "black" : "white",
+      };
+    });
+    setMovesByPiece({});
+    setLastMove({ from, to, id: Date.now() });
+  }, []);
+
   useEffect(() => {
     if (!routeGameId) return;
     const refresh = () => {
       syncFromServer(routeGameId).catch(() => undefined);
     };
-    return subscribeToGame(routeGameId, {
+    let cancelled = false;
+    let stop: (() => void) | undefined;
+    void subscribeToGame(routeGameId, {
       onGame: (row) => {
         if (row.status !== "active") {
           refresh();
           return;
         }
-        setGame((prev) => (prev ? { ...prev, currentTurn: row.currentTurn } : prev));
-        setClock({ whiteRemainingMs: row.whiteRemainingMs, blackRemainingMs: row.blackRemainingMs, syncedAt: Date.now() });
+        setGame((prev) =>
+          prev ? { ...prev, currentTurn: row.currentTurn } : prev,
+        );
+        setClock({
+          whiteRemainingMs: row.whiteRemainingMs,
+          blackRemainingMs: row.blackRemainingMs,
+          syncedAt: Date.now(),
+        });
       },
-      onMove: refresh,
+      onMove: (row) => {
+        const move = row.move as unknown as {
+          from?: Position;
+          to?: Position;
+        } | null;
+        if (
+          move?.from &&
+          move?.to &&
+          row.ply === moveCountRef.current + 1 &&
+          !moveInFlight.current
+        ) {
+          moveCountRef.current = row.ply;
+          showRemoteMove(move.from, move.to);
+        }
+        refresh();
+      },
+      onSubscribed: refresh,
+    }).then((unsubscribe) => {
+      if (cancelled) unsubscribe();
+      else stop = unsubscribe;
     });
-  }, [routeGameId, syncFromServer]);
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [routeGameId, syncFromServer, showRemoteMove]);
 
   const squares = game?.squares ?? [];
 
@@ -256,12 +372,18 @@ function Game() {
       const squares = prev.squares.map((r) => [...r]);
       squares[to.row][to.col] = squares[from.row][from.col];
       squares[from.row][from.col] = null;
-      return { ...prev, squares, currentTurn: prev.currentTurn === "white" ? "black" : "white" };
+      return {
+        ...prev,
+        squares,
+        currentTurn: prev.currentTurn === "white" ? "black" : "white",
+      };
     });
     // Mirrors the server: the mover keeps the time they had left and gets the increment.
     setClock({
-      whiteRemainingMs: remainingFor("white") + (mover === "white" ? increment : 0),
-      blackRemainingMs: remainingFor("black") + (mover === "black" ? increment : 0),
+      whiteRemainingMs:
+        remainingFor("white") + (mover === "white" ? increment : 0),
+      blackRemainingMs:
+        remainingFor("black") + (mover === "black" ? increment : 0),
       syncedAt: Date.now(),
     });
     setMovesByPiece({});
@@ -269,7 +391,12 @@ function Game() {
     setLastMove({ from, to, id: Date.now() });
   };
 
-  const sendMove = async (snapshot: BoardSnapshot, moveData: MoveData, color: Color, appliedLocally: boolean) => {
+  const sendMove = async (
+    snapshot: BoardSnapshot,
+    moveData: MoveData,
+    color: Color,
+    appliedLocally: boolean,
+  ) => {
     moveInFlight.current = true;
     try {
       const res = await authorizedFetch(`${API_URL}/game/move`, {
@@ -282,7 +409,10 @@ function Game() {
         restoreSnapshot(snapshot);
         // A timeout comes back as JSON with the winner and final clocks; other errors are plain text.
         try {
-          const body = JSON.parse(text) as { winner?: Color; clock?: ServerClock };
+          const body = JSON.parse(text) as {
+            winner?: Color;
+            clock?: ServerClock;
+          };
           if (body.winner && body.clock) {
             setGame({ ...snapshot.game, winner: body.winner });
             setClock({ ...body.clock, syncedAt: Date.now() });
@@ -301,12 +431,22 @@ function Game() {
         legalMoves: PieceMoves[];
         clock: ServerClock;
       } = await res.json();
-      setGame((prev) => (prev ? { ...prev, squares: data.boardState.squares, currentTurn: data.currentTurn, status: data.status } : prev));
+      setGame((prev) =>
+        prev
+          ? {
+              ...prev,
+              squares: data.boardState.squares,
+              currentTurn: data.currentTurn,
+              status: data.status,
+            }
+          : prev,
+      );
       setClock({ ...data.clock, syncedAt: Date.now() });
       setMovesByPiece(toMovesByPiece(data.legalMoves));
       moveCountRef.current += 1;
       // Moves played locally already animated; special moves animate once the server confirms them.
-      if (!appliedLocally) setLastMove({ from: moveData.from, to: moveData.to, id: Date.now() });
+      if (!appliedLocally)
+        setLastMove({ from: moveData.from, to: moveData.to, id: Date.now() });
     } catch {
       restoreSnapshot(snapshot);
       setError("Could not reach the server");
@@ -337,22 +477,38 @@ function Game() {
     }
 
     try {
-      if (selectedPiece && legalMoves.some((m) => m.row === row && m.col === col)) {
+      if (
+        selectedPiece &&
+        legalMoves.some((m) => m.row === row && m.col === col)
+      ) {
         const color = game.squares[selectedPiece.row][selectedPiece.col]?.color;
         if (!color) return;
-        if (game.squares[selectedPiece.row][selectedPiece.col]?.pieceType === "pawn" && (row === 0 || row === 7)) {
+        if (
+          game.squares[selectedPiece.row][selectedPiece.col]?.pieceType ===
+            "pawn" &&
+          (row === 0 || row === 7)
+        ) {
           setPendingPromotion({ from: selectedPiece, to: clicked });
           return;
         }
         const snapshot: BoardSnapshot = { game, clock, movesByPiece, lastMove };
         const simple = isSimpleMove(game.squares, selectedPiece, clicked);
         if (simple) applyMoveLocally(selectedPiece, clicked);
-        await sendMove(snapshot, { from: selectedPiece, to: clicked }, color, simple);
+        await sendMove(
+          snapshot,
+          { from: selectedPiece, to: clicked },
+          color,
+          simple,
+        );
         return;
       }
 
       const piece = game.squares[row][col];
-      if (!piece || piece.color !== game.currentTurn || (seat !== null && piece.color !== seat)) {
+      if (
+        !piece ||
+        piece.color !== game.currentTurn ||
+        (seat !== null && piece.color !== seat)
+      ) {
         setSelectedPiece(null);
         return;
       }
@@ -364,13 +520,24 @@ function Game() {
   };
   return (
     <>
-      {error && <p className="absolute top-2 left-1/2 -translate-x-1/2 text-red-600">{error}</p>}
+      {error && (
+        <p className="absolute top-2 left-1/2 -translate-x-1/2 text-red-600">
+          {error}
+        </p>
+      )}
       {game && clock ? (
         <div className="flex flex-col items-center gap-2 overflow-hidden w-[min(100vw,calc(90vh-7rem))] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 absolute">
-          <Clock color="black" remainingMs={remainingFor("black")} active={!isOver && game.currentTurn === "black"} />
+          <Clock
+            color="black"
+            remainingMs={remainingFor("black")}
+            active={!isOver && game.currentTurn === "black"}
+          />
           <div className="grid grid-rows-8 gap-0 w-full aspect-square relative">
             {isOver && (
-              <GameOverlay game={{ ...game, winner: resolvedWinner }} restart={routeGameId ? () => navigate("/") : startGame} />
+              <GameOverlay
+                game={{ ...game, winner: resolvedWinner }}
+                restart={routeGameId ? () => navigate("/") : startGame}
+              />
             )}
             <Board
               squares={squares}
@@ -390,12 +557,24 @@ function Game() {
               />
             )}
           </div>
-          <Clock color="white" remainingMs={remainingFor("white")} active={!isOver && game.currentTurn === "white"} />
+          <Clock
+            color="white"
+            remainingMs={remainingFor("white")}
+            active={!isOver && game.currentTurn === "white"}
+          />
         </div>
       ) : routeGameId ? (
-        !error && <p className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400">Loading game...</p>
+        !error && (
+          <p className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400">
+            Loading game...
+          </p>
+        )
       ) : (
-        <TimeControlPicker value={timeControl} onChange={setTimeControl} onStart={startGame} />
+        <TimeControlPicker
+          value={timeControl}
+          onChange={setTimeControl}
+          onStart={startGame}
+        />
       )}
     </>
   );

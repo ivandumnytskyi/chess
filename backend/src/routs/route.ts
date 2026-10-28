@@ -15,6 +15,7 @@ import { getProfile, changeUsername } from "../controllers/ProfileController";
 import { listGames } from "../controllers/GameHistoryController";
 import { sendInvite, listInvites, acceptInvite, declineInvite, cancelInvite } from "../controllers/InviteController";
 import { requireAuth } from "../../middleware/requireAuth";
+import { ACCESS_COOKIE } from "../../lib/sessionCookies";
 
 
 
@@ -66,6 +67,12 @@ router.post("/game/draw/offer", requireAuth, offerDraw);
 router.post("/game/draw/accept", requireAuth, acceptDraw);
 
 router.post("/game/draw/decline", requireAuth, declineDraw);
+
+router.get("/auth/realtime-token", requireAuth, (req, res) => {
+  const token = req.cookies[ACCESS_COOKIE];
+  if (typeof token !== "string") return res.status(401).json({ error: "Not signed in" });
+  res.json({ accessToken: token });
+});
 
 router.get('/health', (req, res) => {
   res.send('OK');
