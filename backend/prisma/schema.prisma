@@ -46,6 +46,12 @@ enum InviteStatus {
   expired
 }
 
+enum BotDifficulty {
+  easy
+  medium
+  hard
+}
+
 // One row per Supabase auth user. The id is the Supabase user id, so the
 // profile can be upserted on the first authenticated request.
 model Profile {
@@ -83,6 +89,11 @@ model Game {
   endReason   EndReason?
   // The side that has offered a draw and is waiting for the other side to answer.
   drawOfferedBy Color?
+
+  // Both are null for games between two players. Set for games against the Stockfish bot.
+  botDifficulty BotDifficulty?
+  // The side the bot plays. The player gets the other color.
+  botColor      Color?
 
   createdAt  DateTime  @default(now())
   finishedAt DateTime?
