@@ -69,6 +69,14 @@ export const subscribeToGame = async (
   handlers: { onGame: (row: GameRow) => void; onMove: (event: GameMoveEvent) => void; onSubscribed?: () => void },
 ) => {
   await authorizeRealtime();
+
+  // StrictMode runs effects twice in development, so drop any channel left for this game first.
+  const topic = `realtime:game:${gameId}`;
+  supabase
+    .getChannels()
+    .filter((existing) => existing.topic === topic)
+    .forEach((existing) => void supabase.removeChannel(existing));
+
   const channel = supabase
     .channel(`game:${gameId}`, { config: { private: true } })
     .on('broadcast', { event: 'move' }, ({ payload }) => {

@@ -1,26 +1,32 @@
-import stockfish from 'stockfish'
+import { Worker } from 'node:worker_threads'
 
 export type BotSettings = {
   elo: number
   moveTimeMs: number
 }
 
-type StockfishProcess = ReturnType<typeof stockfish>
-
 type Waiter = {
   pattern: RegExp
   resolve: (line: string) => void
+  reject: (error: Error) => void
+  timer: NodeJS.Timeout
 }
 
 const READY_TIMEOUT_MS = 5_000
 const SEARCH_GRACE_MS = 1_500
 
-const createEngine = (onMessage: (line: string) => void): StockfishProcess =>
-  stockfish('lite-single', onMessage)
+// Stockfish runs in a worker thread so a long or stuck search can't block the Express event loop.
+// The worker forwards UCI commands in and engine output lines out.
+const WORKER_SOURCE = `
+const { parentPort, workerData } = require('node:worker_threads');
+const stockfish = require(workerData.modulePath);
+const engine = stockfish('lite-single', (line) => parentPort.postMessage({ line }));
+parentPort.on('message', ({ command }) => engine.processCommand(command));
+`
 
-// Runs one Stockfish process shared by all bot games. Searches are queued so only one runs at a time.
+// Runs one Stockfish worker shared by all bot games. Searches are queued so only one runs at a time.
 export class StockfishBotEngine {
-  private engine: StockfishProcess | null = null
+  private worker: Worker | null = null
   private waiter: Waiter | null = null
   private queue: Promise<unknown> = Promise.resolve()
 
@@ -31,21 +37,28 @@ export class StockfishBotEngine {
   }
 
   shutdown(): void {
-    this.engine?.terminate()
-    this.engine = null
+    const worker = this.worker
+    this.worker = null
+    if (worker) void worker.terminate()
+
+    const waiter = this.waiter
     this.waiter = null
+    if (waiter) {
+      clearTimeout(waiter.timer)
+      waiter.reject(new Error('Stockfish engine was stopped'))
+    }
   }
 
   private async search(fen: string, settings: BotSettings): Promise<string | null> {
     try {
-      const engine = await this.ensureReady()
-      engine.processCommand(`setoption name UCI_LimitStrength value true`)
-      engine.processCommand(`setoption name UCI_Elo value ${settings.elo}`)
+      const worker = await this.ensureReady()
+      this.send(worker, `setoption name UCI_LimitStrength value true`)
+      this.send(worker, `setoption name UCI_Elo value ${settings.elo}`)
 
       // Register the waiter before sending the search so a fast reply can't be missed.
       const reply = this.waitFor(/^bestmove /, settings.moveTimeMs + SEARCH_GRACE_MS)
-      engine.processCommand(`position fen ${fen}`)
-      engine.processCommand(`go movetime ${settings.moveTimeMs}`)
+      this.send(worker, `position fen ${fen}`)
+      this.send(worker, `go movetime ${settings.moveTimeMs}`)
 
       const line = await reply
       const move = line.split(' ')[1]
@@ -56,26 +69,49 @@ export class StockfishBotEngine {
     }
   }
 
-  private async ensureReady(): Promise<StockfishProcess> {
-    if (this.engine) return this.engine
+  private async ensureReady(): Promise<Worker> {
+    if (this.worker) return this.worker
 
-    const engine = createEngine((line) => this.handleLine(line))
-    this.engine = engine
+    const worker = this.startWorker()
+    this.worker = worker
     try {
-      await this.request(engine, 'uci', /^uciok/, READY_TIMEOUT_MS)
-      engine.processCommand('setoption name Threads value 1')
-      engine.processCommand('setoption name Hash value 16')
-      await this.request(engine, 'isready', /^readyok/, READY_TIMEOUT_MS)
+      await this.request(worker, 'uci', /^uciok/, READY_TIMEOUT_MS)
+      this.send(worker, 'setoption name Threads value 1')
+      this.send(worker, 'setoption name Hash value 16')
+      await this.request(worker, 'isready', /^readyok/, READY_TIMEOUT_MS)
     } catch (error) {
       this.shutdown()
       throw error
     }
-    return engine
+    return worker
   }
 
-  private request(engine: StockfishProcess, command: string, pattern: RegExp, timeoutMs: number): Promise<string> {
+  private startWorker(): Worker {
+    const worker = new Worker(WORKER_SOURCE, {
+      eval: true,
+      workerData: { modulePath: require.resolve('stockfish') },
+    })
+    // The engine should never keep the process alive on its own.
+    worker.unref()
+    worker.on('message', ({ line }: { line: string }) => {
+      if (this.worker === worker) this.handleLine(line)
+    })
+    worker.on('error', () => {
+      if (this.worker === worker) this.shutdown()
+    })
+    worker.on('exit', () => {
+      if (this.worker === worker) this.shutdown()
+    })
+    return worker
+  }
+
+  private send(worker: Worker, command: string): void {
+    worker.postMessage({ command })
+  }
+
+  private request(worker: Worker, command: string, pattern: RegExp, timeoutMs: number): Promise<string> {
     const reply = this.waitFor(pattern, timeoutMs)
-    engine.processCommand(command)
+    this.send(worker, command)
     return reply
   }
 
@@ -88,9 +124,14 @@ export class StockfishBotEngine {
 
       this.waiter = {
         pattern,
+        timer,
         resolve: (line) => {
           clearTimeout(timer)
           resolve(line)
+        },
+        reject: (error) => {
+          clearTimeout(timer)
+          reject(error)
         },
       }
     })

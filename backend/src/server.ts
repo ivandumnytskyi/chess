@@ -2,10 +2,24 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import router from "./routs/route"
+import { botEngine } from "./bot/StockFishEngine";
 
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 
 const app: Express = express();
+
+const server = app.listen(process.env.PORT || 3000, () => {
+  console.log(`Server is running on port ${process.env.PORT || 3000}`);
+});
+
+// Stops the Stockfish process with the server so it doesn't outlive the HTTP listener.
+const shutdown = () => {
+  botEngine.shutdown();
+  server.close(() => process.exit(0));
+};
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
+
 app.use(cors({
   origin: FRONTEND_ORIGIN,
   credentials: true,
@@ -27,7 +41,3 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
-
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`Server is running on port ${process.env.PORT || 3000}`);
-});

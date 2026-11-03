@@ -25,6 +25,8 @@ import {
 import { subscribeToGame } from "../lib/rtChanelsSB";
 
 const API_URL = "/api";
+// Longer than the slowest bot search plus the server's own work, so only a hung request hits it.
+const MOVE_REQUEST_TIMEOUT_MS = 30_000;
 
 type ServerClock = { whiteRemainingMs: number; blackRemainingMs: number };
 
@@ -412,11 +414,15 @@ function Game() {
     appliedLocally: boolean,
   ) => {
     moveInFlight.current = true;
+    // Aborts a hung request so a stuck server can't lock the board; the catch below restores the position.
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), MOVE_REQUEST_TIMEOUT_MS);
     try {
       const res = await authorizedFetch(`${API_URL}/game/move`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ gameId: snapshot.game.gameId, moveData, color }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         const text = await res.text();
@@ -444,6 +450,7 @@ function Game() {
         status: GameStatus;
         legalMoves: PieceMoves[];
         clock: ServerClock;
+        botMove: MoveData | null;
       } = await res.json();
       setGame((prev) =>
         prev
@@ -457,14 +464,19 @@ function Game() {
       );
       setClock({ ...data.clock, syncedAt: Date.now() });
       setMovesByPiece(toMovesByPiece(data.legalMoves));
-      moveCountRef.current += 1;
-      // Moves played locally already animated; special moves animate once the server confirms them.
-      if (!appliedLocally)
+      // The response already includes the bot's reply, so both plies are counted here. Otherwise the bot's
+      // realtime broadcast would look like a new remote move and be applied twice.
+      moveCountRef.current += data.botMove ? 2 : 1;
+      // The bot's reply is animated here since the board already shows it. Moves played locally already animated; special moves animate once the server confirms them.
+      if (data.botMove)
+        setLastMove({ from: data.botMove.from, to: data.botMove.to, id: Date.now() });
+      else if (!appliedLocally)
         setLastMove({ from: moveData.from, to: moveData.to, id: Date.now() });
     } catch {
       restoreSnapshot(snapshot);
       setError("Could not reach the server");
     } finally {
+      clearTimeout(abortTimer);
       moveInFlight.current = false;
     }
   };

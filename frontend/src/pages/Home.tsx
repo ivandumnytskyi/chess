@@ -8,6 +8,7 @@ import { useAccount } from "../lib/account";
 import { useGames } from "../lib/history";
 import InviteBox from "../components/Home/inviteBox";
 import InviteForm from "../components/Home/inviteForm";
+import BotChoicer from "../components/Home/botChoicer";
 
 const HISTORY_PAGE_SIZE = 10;
 
@@ -34,7 +35,8 @@ const Home = () => {
 
         <HomeActions canInviteFriend={canInviteFriend} />
         {canInviteFriend && <InviteBox />}
-        <InviteForm />
+        {/* <InviteForm /> */}
+        <BotChoicer />
 
         {!loading && account && !canInviteFriend && (
           <p className="text-sm text-gray-400">Choose a username in Settings to invite friends.</p>

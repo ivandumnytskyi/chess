@@ -85,5 +85,7 @@ export const broadcastGameMove = async (
     throw error;
   } finally {
     await realtime.removeChannel(channel);
+    // Each broadcast uses its own client, so close its socket or it stays open after every move.
+    realtime.realtime.disconnect();
   }
 };
