@@ -13,6 +13,9 @@ import {
   type Clock,
   type TimeControlId,
 } from "../game/timeControls";
+import { BotDifficultyLevels, type BotDifficultyLevel } from "../bot/botDifficultyLevels";
+import { botEngine } from "../bot/StockFishEngine";
+import { convertMove } from "../pieces/helpers/convMoveSt";
 import { prisma } from "../../lib/prisma";
 import { broadcastGameMove } from "../../lib/supabase";
 import { Prisma, type Game as GameRow } from "../../generated/prisma/client";
@@ -72,7 +75,7 @@ const opponentOf = (color: Color): Color => (color === "white" ? "black" : "whit
 // Row data for a fresh game with a full clock. Solo games have no black player.
 export const newGameData = (
   timeControlId: TimeControlId,
-  whitePlayerId: string,
+  whitePlayerId: string | null,
   blackPlayerId: string | null,
   now: number,
 ) => {
@@ -80,7 +83,7 @@ export const newGameData = (
   return {
     clock,
     data: {
-      whitePlayerId,
+      ...(whitePlayerId ? { whitePlayerId } : {}),
       ...(blackPlayerId ? { blackPlayerId } : {}),
       timeControlId,
       timeInitialMs: TIME_CONTROLS[timeControlId].initialMs,
@@ -93,7 +96,9 @@ export const newGameData = (
 };
 
 // In a two-player game each player may only move their own color. Solo games let the owner move both.
+// In a bot game the bot's color is never movable by the player.
 const mayMoveAs = (row: GameRow, userId: string, color: Color): boolean => {
+  if (row.botColor === color) return false;
   if (!row.whitePlayerId || !row.blackPlayerId) return true;
   return (color === "white" ? row.whitePlayerId : row.blackPlayerId) === userId;
 };
@@ -120,17 +125,77 @@ const isMoveData = (value: unknown): value is MoveData =>
   isPosition((value as MoveData).from) && isPosition((value as MoveData).to) &&
   ((value as MoveData).promotion === undefined || PROMOTION_PIECES.includes((value as MoveData).promotion));
 
-// 1. Create new game → return gameId
+const isBotDifficultyLevel = (value: unknown): value is BotDifficultyLevel =>
+  typeof value === "string" && Object.hasOwn(BotDifficultyLevels, value);
+
+const moveJson = (move: MoveData): Prisma.InputJsonValue => ({
+  from: move.from,
+  to: move.to,
+  ...(move.promotion ? { promotion: move.promotion } : {}),
+}) as Prisma.InputJsonValue;
+
+// Asks Stockfish for a move at the given level and plays it on the board.
+const chooseBotMove = async (game: ChessGame, botColor: Color, level: BotDifficultyLevel): Promise<MoveData> => {
+  const uci = await botEngine.bestMove(game.getFenNotation(), BotDifficultyLevels[level]);
+  if (!uci) throw new Error("Bot has no legal move");
+  const move = convertMove(uci);
+  game.makeMove(move, botColor, move.promotion);
+  return move;
+};
+
+// 1. Create new game → return gameId. A bot game is created when botDifficulty is sent.
 export const createNewGame = async (req: Request, res: Response) => {
-  const { timeControl } = (req.body ?? {}) as { timeControl?: unknown };
+  const { timeControl, botDifficulty, playerColor } = (req.body ?? {}) as {
+    timeControl?: unknown;
+    botDifficulty?: unknown;
+    playerColor?: unknown;
+  };
   if (timeControl !== undefined && !isTimeControlId(timeControl)) {
     return res.status(400).send("Invalid time control");
   }
+  if (botDifficulty !== undefined && !isBotDifficultyLevel(botDifficulty)) {
+    return res.status(400).send("Invalid bot difficulty");
+  }
+  if (playerColor !== undefined && !isColor(playerColor)) {
+    return res.status(400).send("Invalid player color");
+  }
   const timeControlId = isTimeControlId(timeControl) ? timeControl : DEFAULT_TIME_CONTROL;
+  const userId = getUserId(res);
+  const humanColor: Color = isColor(playerColor) ? playerColor : "white";
 
   const game = new ChessGame();
-  const { clock, data } = newGameData(timeControlId, getUserId(res), null, Date.now());
-  const row = await prisma.game.create({ data });
+  const botLevel = isBotDifficultyLevel(botDifficulty) ? botDifficulty : null;
+  const botColor = botLevel ? opponentOf(humanColor) : null;
+
+  // White moves first. When the bot is white, its opening move is chosen before the game row is written,
+  // so a failed engine call leaves no half-created game behind.
+  let botMove: MoveData | null = null;
+  if (botLevel && botColor && game.getCurrentTurn() === botColor) {
+    try {
+      botMove = await chooseBotMove(game, botColor, botLevel);
+    } catch {
+      return res.status(503).send("Bot is unavailable");
+    }
+  }
+
+  const { clock, data } = newGameData(
+    timeControlId,
+    humanColor === "white" ? userId : null,
+    humanColor === "black" ? userId : null,
+    Date.now(),
+  );
+  const row = await prisma.game.create({
+    data: {
+      ...data,
+      ...(botLevel && botColor ? { botDifficulty: botLevel, botColor } : {}),
+      ...(botMove && botColor
+        ? {
+            currentTurn: game.getCurrentTurn(),
+            moves: { create: { ply: 1, color: botColor, move: moveJson(botMove) } },
+          }
+        : {}),
+    },
+  });
 
   res.json({
     gameId: row.id,
@@ -138,6 +203,9 @@ export const createNewGame = async (req: Request, res: Response) => {
     currentTurn: game.getCurrentTurn(),
     timeControl: timeControlId,
     clock: clockView(clock),
+    botDifficulty: row.botDifficulty,
+    botColor: row.botColor,
+    botMove,
   });
 }
 
@@ -171,28 +239,47 @@ export const makeMove = async (req: Request, res: Response) => {
     return res.status(400).send(err instanceof Error ? err.message : "Invalid move");
   }
 
+  // Bot reply is chosen before anything is saved, so an engine failure leaves the game unchanged.
   const status = game.getGameStatus();
-  const ended = endOfGame(status, color);
+  const botColor = row.botColor;
+  const botIsToMove = botColor !== null && game.getCurrentTurn() === botColor;
+  let botMove: MoveData | null = null;
+  if (botColor && row.botDifficulty && botIsToMove && endOfGame(status, color).status === "active") {
+    try {
+      botMove = await chooseBotMove(game, botColor, row.botDifficulty);
+    } catch {
+      return res.status(503).send("Bot is unavailable");
+    }
+  }
+
+  const finalStatus = game.getGameStatus();
+  const mover: Color = botMove && botColor ? botColor : color;
+  const ended = endOfGame(finalStatus, mover);
+  const clock = botMove && botColor
+    ? applyMoveToClock(update.clock, botColor, now, row.timeIncrementMs).clock
+    : update.clock;
+  const savedMoves: { ply: number; color: Color; move: MoveData }[] = [
+    { ply: moveCount + 1, color, move: moveData },
+    ...(botMove && botColor ? [{ ply: moveCount + 2, color: botColor, move: botMove }] : []),
+  ];
   const moveProcessingMs = performance.now() - moveStartedAt;
   const transactionStartedAt = performance.now();
   await prisma.$transaction([
-    prisma.move.create({
-      data: {
-        gameId: row.id,
-        ply: moveCount + 1,
-        color,
-        move: {
-          from: moveData.from,
-          to: moveData.to,
-          ...(moveData.promotion ? { promotion: moveData.promotion } : {}),
-        } as Prisma.InputJsonValue,
-      },
-    }),
+    ...savedMoves.map((saved) =>
+      prisma.move.create({
+        data: {
+          gameId: row.id,
+          ply: saved.ply,
+          color: saved.color,
+          move: moveJson(saved.move),
+        },
+      }),
+    ),
     prisma.game.update({
       where: { id: row.id },
       data: {
-        whiteRemainingMs: update.clock.whiteRemainingMs,
-        blackRemainingMs: update.clock.blackRemainingMs,
+        whiteRemainingMs: clock.whiteRemainingMs,
+        blackRemainingMs: clock.blackRemainingMs,
         lastMoveAt: new Date(now),
         currentTurn: game.getCurrentTurn(),
         // Moving counts as turning down a draw offer made by the other side.
@@ -206,15 +293,17 @@ export const makeMove = async (req: Request, res: Response) => {
 
   const realtimeAccessToken: unknown = res.locals.realtimeAccessToken;
   if (typeof realtimeAccessToken === "string") {
-    void broadcastGameMove(realtimeAccessToken, row.id, moveCount + 1, moveData)
-      .catch((error: unknown) => {
-        console.error(JSON.stringify({
-          event: "game_move_broadcast_request_failed",
-          gameId: row.id,
-          ply: moveCount + 1,
-          error: error instanceof Error ? error.message : String(error),
-        }));
-      });
+    for (const saved of savedMoves) {
+      void broadcastGameMove(realtimeAccessToken, row.id, saved.ply, saved.move)
+        .catch((error: unknown) => {
+          console.error(JSON.stringify({
+            event: "game_move_broadcast_request_failed",
+            gameId: row.id,
+            ply: saved.ply,
+            error: error instanceof Error ? error.message : String(error),
+          }));
+        });
+    }
   }
 
   const responseStartedAt = performance.now();
@@ -224,9 +313,10 @@ export const makeMove = async (req: Request, res: Response) => {
   res.json({
     boardState,
     currentTurn: game.getCurrentTurn(),
-    status,
+    status: finalStatus,
     legalMoves,
-    clock: clockView(update.clock),
+    clock: clockView(clock),
+    botMove,
   });
   console.info(JSON.stringify({
     event: "game_move_timing",

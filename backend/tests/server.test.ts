@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import router from "../src/routs/route";
+import { BotDifficultyLevels } from "../src/bot/botDifficultyLevels";
 
 const {
   mockGetUser,
@@ -203,6 +204,10 @@ vi.mock("../lib/supabase", () => ({
     },
   },
 }));
+const { mockBestMove } = vi.hoisted(() => ({
+  mockBestMove: vi.fn<(fen: string, settings: { elo: number; moveTimeMs: number }) => Promise<string | null>>(),
+}));
+vi.mock("../src/bot/StockFishEngine", () => ({ botEngine: { bestMove: mockBestMove } }));
 vi.mock("../lib/prisma", () => {
   const prisma = {
     profile: { upsert: mockProfileUpsert, findUnique: mockProfileFindUnique, update: mockProfileUpdate },
@@ -365,6 +370,141 @@ describe("POST /api/game", () => {
     const b = await createGame();
 
     expect(a.gameId).not.toBe(b.gameId);
+  });
+});
+
+interface BotGameResponse {
+  botDifficulty: string | null;
+  botColor: string | null;
+  currentTurn: string;
+  botMove: unknown;
+}
+
+interface BotMoveResponse {
+  currentTurn: string;
+  status: string;
+  botMove: unknown;
+}
+
+describe("POST /api/game with a bot", () => {
+  const createBotGame = (body: unknown, token = "token-a"): Promise<TestResponse> =>
+    fetch(`${baseUrl}/game`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookie(token) },
+      body: JSON.stringify(body),
+    });
+
+  beforeEach(() => {
+    mockBestMove.mockReset();
+    mockGameCreate.mockClear();
+  });
+
+  it("waits for the player without asking the engine when the player is white", async () => {
+    const res = await createBotGame({ botDifficulty: "easy", playerColor: "white" });
+    const body = (await res.json()) as BotGameResponse;
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ botDifficulty: "easy", botColor: "black", currentTurn: "white", botMove: null });
+    expect(mockBestMove).not.toHaveBeenCalled();
+    expect(mockGameCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ whitePlayerId: "user-a", botColor: "black", botDifficulty: "easy" }),
+    });
+  });
+
+  it("plays the bot's opening move and saves it with the game when the bot is white", async () => {
+    mockBestMove.mockResolvedValueOnce("e2e4");
+    const res = await createBotGame({ botDifficulty: "medium", playerColor: "black" });
+    const body = (await res.json()) as BotGameResponse;
+
+    expect(body).toMatchObject({
+      botColor: "white",
+      currentTurn: "black",
+      botMove: { from: { row: 6, col: 4 }, to: { row: 4, col: 4 } },
+    });
+    expect(mockBestMove).toHaveBeenCalledWith(
+      expect.stringContaining("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w"),
+      BotDifficultyLevels.medium,
+    );
+    expect(mockGameCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        currentTurn: "black",
+        moves: {
+          create: {
+            ply: 1,
+            color: "white",
+            move: { from: { row: 6, col: 4 }, to: { row: 4, col: 4 } },
+          },
+        },
+      }),
+    });
+  });
+
+  it("returns 503 and creates no game when the engine fails", async () => {
+    mockBestMove.mockRejectedValueOnce(new Error("engine crashed"));
+    const res = await createBotGame({ botDifficulty: "hard", playerColor: "black" });
+
+    expect(res.status).toBe(503);
+    expect(mockGameCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an unknown difficulty", { botDifficulty: "impossible" }],
+    ["an unknown player color", { botDifficulty: "easy", playerColor: "green" }],
+  ])("rejects %s with 400", async (_label, body) => {
+    const res = await createBotGame(body);
+
+    expect(res.status).toBe(400);
+    expect(mockGameCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/game/move in a bot game", () => {
+  const createPlayerWhiteBotGame = async (): Promise<GameResponse> => {
+    const res = await fetch(`${baseUrl}/game`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookie("token-a") },
+      body: JSON.stringify({ botDifficulty: "easy", playerColor: "white" }),
+    });
+    return (await res.json()) as GameResponse;
+  };
+
+  beforeEach(() => {
+    mockBestMove.mockReset();
+    mockMoveCreate.mockClear();
+  });
+
+  it("plays the bot's reply and saves both moves", async () => {
+    const { gameId } = await createPlayerWhiteBotGame();
+    mockBestMove.mockResolvedValueOnce("e7e5");
+    const res = await postMove({ gameId, moveData: e2e4, color: "white" });
+    const body = (await res.json()) as BotMoveResponse;
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({
+      currentTurn: "white",
+      status: "active",
+      botMove: { from: { row: 1, col: 4 }, to: { row: 3, col: 4 } },
+    });
+    expect(mockBestMove).toHaveBeenCalledWith(expect.stringContaining(" b "), BotDifficultyLevels.easy);
+    expect(mockMoveCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ ply: 1, color: "white" }) });
+    expect(mockMoveCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ ply: 2, color: "black" }) });
+  });
+
+  it("returns 503 and saves nothing when the engine fails", async () => {
+    const { gameId } = await createPlayerWhiteBotGame();
+    mockBestMove.mockRejectedValueOnce(new Error("engine crashed"));
+    const res = await postMove({ gameId, moveData: e2e4, color: "white" });
+
+    expect(res.status).toBe(503);
+    expect(mockMoveCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not let the player move the bot's color", async () => {
+    const { gameId } = await createPlayerWhiteBotGame();
+    const res = await postMove({ gameId, moveData: e2e4, color: "black" });
+
+    expect(res.status).toBe(403);
+    expect(mockBestMove).not.toHaveBeenCalled();
   });
 });
 
