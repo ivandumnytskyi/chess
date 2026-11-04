@@ -1,8 +1,8 @@
-import { TIME_CONTROL_OPTIONS, type TimeControlId } from "../../constants/timeControls";
+import { SOLO_TIME_CONTROL_OPTIONS, type SoloTimeControlId } from "../../constants/timeControls";
 
 type TimeControlPickerProps = {
-  value: TimeControlId;
-  onChange: (value: TimeControlId) => void;
+  value: SoloTimeControlId;
+  onChange: (value: SoloTimeControlId) => void;
   onStart: () => void;
 };
 
@@ -11,7 +11,7 @@ const TimeControlPicker = ({ value, onChange, onStart }: TimeControlPickerProps)
     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-6 text-white">
       <fieldset className="flex flex-wrap justify-center gap-4">
         <legend className="w-full text-center pb-4 text-xl">Choose time control</legend>
-        {TIME_CONTROL_OPTIONS.map((option) => (
+        {SOLO_TIME_CONTROL_OPTIONS.map((option) => (
           <label
             key={option.id}
             className={`cursor-pointer border-2 px-4 py-2 rounded-lg ${

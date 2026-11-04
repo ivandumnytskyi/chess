@@ -20,7 +20,7 @@ import { authorizedFetch } from "../lib/authorization";
 import {
   DEFAULT_TIME_CONTROL,
   incrementFor,
-  type TimeControlId,
+  type SoloTimeControlId,
 } from "../constants/timeControls";
 import { subscribeToGame } from "../lib/rtChanelsSB";
 
@@ -31,7 +31,7 @@ const MOVE_REQUEST_TIMEOUT_MS = 30_000;
 type ServerClock = { whiteRemainingMs: number; blackRemainingMs: number };
 
 async function createGame(
-  timeControl: TimeControlId,
+  timeControl: SoloTimeControlId,
 ): Promise<{ game: GameView; clock: ClockState }> {
   const res = await authorizedFetch(`${API_URL}/game`, {
     method: "POST",
@@ -114,7 +114,8 @@ type GameStateView = {
   legalMoves: PieceMoves[];
   moveCount: number;
   lastMove: { from: Position; to: Position } | null;
-  clock: ServerClock;
+  clock: ServerClock | null;
+  endReason: string | null;
 };
 
 async function fetchGame(gameId: string): Promise<GameStateView> {
@@ -136,7 +137,7 @@ function Game() {
   );
   const [error, setError] = useState<string | null>(null);
   const [timeControl, setTimeControl] =
-    useState<TimeControlId>(DEFAULT_TIME_CONTROL);
+    useState<SoloTimeControlId>(DEFAULT_TIME_CONTROL);
   const [clock, setClock] = useState<ClockState | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [lastMove, setLastMove] = useState<{
@@ -151,6 +152,7 @@ function Game() {
   // Set in an online game to the side this player controls; null for a local game where one player moves both sides.
   const [seat, setSeat] = useState<Color | null>(null);
   const [isBotGame, setIsBotGame] = useState(false);
+  const [endReason, setEndReason] = useState<string | null>(null);
   const { id: routeGameId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   // Number of moves the board currently shows, so polling only animates a move it has not shown yet.
@@ -179,6 +181,7 @@ function Game() {
 
   // The side to move has run out of time locally; the server is told so the result is recorded.
   const timedOut =
+    !isBotGame &&
     game !== null &&
     clock !== null &&
     !serverOver &&
@@ -200,8 +203,9 @@ function Game() {
       status: view.status,
       winner: view.winner ?? undefined,
     });
-    setClock({ ...view.clock, syncedAt: Date.now() });
+    setClock(view.clock ? { ...view.clock, syncedAt: Date.now() } : null);
     setMovesByPiece(toMovesByPiece(view.legalMoves));
+    setEndReason(view.endReason);
     setSeat(view.yourColor);
     setIsBotGame(view.isBotGame);
   }, []);
@@ -280,6 +284,7 @@ function Game() {
         const data: { winner: Color; clock: ServerClock } = await res.json();
         setGame((prev) => (prev ? { ...prev, winner: data.winner } : prev));
         setClock({ ...data.clock, syncedAt: Date.now() });
+        setEndReason("timeout");
       } catch {
         setError("Could not reach the server");
       } finally {
@@ -325,17 +330,18 @@ function Game() {
         setGame((prev) =>
           prev ? { ...prev, currentTurn: row.currentTurn } : prev,
         );
-        setClock({
-          whiteRemainingMs: row.whiteRemainingMs,
-          blackRemainingMs: row.blackRemainingMs,
-          syncedAt: Date.now(),
-        });
+        // Untimed bot games have no clock, so the realtime row must not create one.
+        setClock(
+          (prev) =>
+            prev && {
+              whiteRemainingMs: row.whiteRemainingMs,
+              blackRemainingMs: row.blackRemainingMs,
+              syncedAt: Date.now(),
+            },
+        );
       },
       onMove: ({ ply, move }) => {
-        if (
-          ply === moveCountRef.current + 1 &&
-          !moveInFlight.current
-        ) {
+        if (ply === moveCountRef.current + 1 && !moveInFlight.current) {
           moveCountRef.current = ply;
           showRemoteMove(move.from, move.to);
           refresh();
@@ -344,14 +350,18 @@ function Game() {
         }
       },
       onSubscribed: refresh,
-    }).then((unsubscribe) => {
-      if (cancelled) unsubscribe();
-      else stop = unsubscribe;
-    }).catch((err: unknown) => {
-      if (!cancelled) {
-        setError(err instanceof Error ? err.message : "Could not subscribe to game");
-      }
-    });
+    })
+      .then((unsubscribe) => {
+        if (cancelled) unsubscribe();
+        else stop = unsubscribe;
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Could not subscribe to game",
+          );
+        }
+      });
     return () => {
       cancelled = true;
       stop?.();
@@ -365,6 +375,7 @@ function Game() {
       const { game: newGame, clock: newClock } = await createGame(timeControl);
       setGame(newGame);
       setClock(newClock);
+      setEndReason(null);
       setNow(Date.now());
       setLastMove(null);
       setSelectedPiece(null);
@@ -397,14 +408,16 @@ function Game() {
         currentTurn: prev.currentTurn === "white" ? "black" : "white",
       };
     });
-    // Mirrors the server: the mover keeps the time they had left and gets the increment.
-    setClock({
-      whiteRemainingMs:
-        remainingFor("white") + (mover === "white" ? increment : 0),
-      blackRemainingMs:
-        remainingFor("black") + (mover === "black" ? increment : 0),
-      syncedAt: Date.now(),
-    });
+    // Mirrors the server: the mover keeps the time they had left and gets the increment. Games without a clock skip this.
+    if (clock) {
+      setClock({
+        whiteRemainingMs:
+          remainingFor("white") + (mover === "white" ? increment : 0),
+        blackRemainingMs:
+          remainingFor("black") + (mover === "black" ? increment : 0),
+        syncedAt: Date.now(),
+      });
+    }
     setMovesByPiece({});
     setSelectedPiece(null);
     setLastMove({ from, to, id: Date.now() });
@@ -419,7 +432,10 @@ function Game() {
     moveInFlight.current = true;
     // Aborts a hung request so a stuck server can't lock the board; the catch below restores the position.
     const controller = new AbortController();
-    const abortTimer = setTimeout(() => controller.abort(), MOVE_REQUEST_TIMEOUT_MS);
+    const abortTimer = setTimeout(
+      () => controller.abort(),
+      MOVE_REQUEST_TIMEOUT_MS,
+    );
     try {
       const res = await authorizedFetch(`${API_URL}/game/move`, {
         method: "POST",
@@ -439,6 +455,7 @@ function Game() {
           if (body.winner && body.clock) {
             setGame({ ...snapshot.game, winner: body.winner });
             setClock({ ...body.clock, syncedAt: Date.now() });
+            setEndReason("timeout");
             return;
           }
         } catch {
@@ -452,7 +469,7 @@ function Game() {
         currentTurn: Color;
         status: GameStatus;
         legalMoves: PieceMoves[];
-        clock: ServerClock;
+        clock: ServerClock | null;
         botMove: MoveData | null;
       } = await res.json();
       setGame((prev) =>
@@ -465,14 +482,18 @@ function Game() {
             }
           : prev,
       );
-      setClock({ ...data.clock, syncedAt: Date.now() });
+      setClock(data.clock ? { ...data.clock, syncedAt: Date.now() } : null);
       setMovesByPiece(toMovesByPiece(data.legalMoves));
       // The response already includes the bot's reply, so both plies are counted here. Otherwise the bot's
       // realtime broadcast would look like a new remote move and be applied twice.
       moveCountRef.current += data.botMove ? 2 : 1;
       // The bot's reply is animated here since the board already shows it. Moves played locally already animated; special moves animate once the server confirms them.
       if (data.botMove)
-        setLastMove({ from: data.botMove.from, to: data.botMove.to, id: Date.now() });
+        setLastMove({
+          from: data.botMove.from,
+          to: data.botMove.to,
+          id: Date.now(),
+        });
       else if (!appliedLocally)
         setLastMove({ from: moveData.from, to: moveData.to, id: Date.now() });
     } catch {
@@ -481,6 +502,31 @@ function Game() {
     } finally {
       clearTimeout(abortTimer);
       moveInFlight.current = false;
+    }
+  };
+
+  // Asks for confirmation, then ends the game as a resignation. Only a seated player can resign.
+  const resign = async () => {
+    if (!game || isOver || seat === null) return;
+    if (!window.confirm("Resign this game?")) return;
+    try {
+      const res = await authorizedFetch(`${API_URL}/game/resign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameId: game.gameId }),
+      });
+      if (!res.ok) {
+        setError(await res.text());
+        syncFromServer(game.gameId).catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : "Could not load game");
+        });
+        return;
+      }
+      const data: { winner: Color } = await res.json();
+      setGame((prev) => (prev ? { ...prev, winner: data.winner } : prev));
+      setEndReason("resignation");
+    } catch {
+      setError("Could not reach the server");
     }
   };
 
@@ -554,9 +600,9 @@ function Game() {
           {error}
         </p>
       )}
-      {game && clock ? (
+      {game ? (
         <div className="flex flex-col items-center gap-2 overflow-hidden w-[min(100vw,calc(90vh-7rem))] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 absolute">
-          {!isBotGame && (
+          {clock !== null && (
             <Clock
               color="black"
               remainingMs={remainingFor("black")}
@@ -567,6 +613,7 @@ function Game() {
             {isOver && (
               <GameOverlay
                 game={{ ...game, winner: resolvedWinner }}
+                endReason={endReason}
                 restart={routeGameId ? () => navigate("/") : startGame}
               />
             )}
@@ -588,13 +635,25 @@ function Game() {
               />
             )}
           </div>
-          {!isBotGame && (
-            <Clock
-              color="white"
-              remainingMs={remainingFor("white")}
-              active={!isOver && game.currentTurn === "white"}
-            />
-          )}
+          <div className="flex w-full items-center justify-between gap-2">
+            {clock !== null ? (
+              <Clock
+                color="white"
+                remainingMs={remainingFor("white")}
+                active={!isOver && game.currentTurn === "white"}
+              />
+            ) : (
+              <span />
+            )}
+            {!isOver && seat !== null && (
+              <button
+                className="px-4 py-2 bg-red-600 text-white rounded"
+                onClick={resign}
+              >
+                Resign
+              </button>
+            )}
+          </div>
         </div>
       ) : routeGameId ? (
         !error && (

@@ -13,6 +13,13 @@ export const DEFAULT_TIME_CONTROL: TimeControlId = "10+0";
 export const isTimeControlId = (value: unknown): value is TimeControlId =>
   typeof value === "string" && Object.keys(TIME_CONTROLS).includes(value);
 
+// Only solo games can be untimed. Invites accept timed controls only.
+export const UNTIMED_TIME_CONTROL = "untimed";
+export type SoloTimeControlId = TimeControlId | typeof UNTIMED_TIME_CONTROL;
+
+export const isSoloTimeControlId = (value: unknown): value is SoloTimeControlId =>
+  value === UNTIMED_TIME_CONTROL || isTimeControlId(value);
+
 export type Clock = {
   whiteRemainingMs: number;
   blackRemainingMs: number;

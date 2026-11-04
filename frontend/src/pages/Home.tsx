@@ -35,7 +35,7 @@ const Home = () => {
 
         <HomeActions canInviteFriend={canInviteFriend} />
         {canInviteFriend && <InviteBox />}
-        {/* <InviteForm /> */}
+        <InviteForm />
         <BotChoicer />
 
         {!loading && account && !canInviteFriend && (

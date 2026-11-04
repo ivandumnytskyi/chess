@@ -4,9 +4,16 @@ export const TIME_CONTROL_OPTIONS = [
   { id: "10+0", label: "Rapid 10+0", incrementMs: 0 },
 ] as const;
 
+// Only solo games can be untimed. Invites use TIME_CONTROL_OPTIONS.
+export const SOLO_TIME_CONTROL_OPTIONS = [
+  ...TIME_CONTROL_OPTIONS,
+  { id: "untimed", label: "Untimed", incrementMs: 0 },
+] as const;
+
 export type TimeControlId = (typeof TIME_CONTROL_OPTIONS)[number]["id"];
+export type SoloTimeControlId = (typeof SOLO_TIME_CONTROL_OPTIONS)[number]["id"];
 
 export const DEFAULT_TIME_CONTROL: TimeControlId = "10+0";
 
-export const incrementFor = (id: TimeControlId): number =>
-  TIME_CONTROL_OPTIONS.find((option) => option.id === id)?.incrementMs ?? 0;
+export const incrementFor = (id: SoloTimeControlId): number =>
+  SOLO_TIME_CONTROL_OPTIONS.find((option) => option.id === id)?.incrementMs ?? 0;

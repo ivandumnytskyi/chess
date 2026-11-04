@@ -1,10 +1,18 @@
 import type { GameView } from "../../types";
 
-const GameOverlay = ({ game, restart }: { game: GameView; restart: () => void }) => {
+const GameOverlay = ({
+  game,
+  endReason,
+  restart,
+}: {
+  game: GameView;
+  endReason: string | null;
+  restart: () => void;
+}) => {
   if (game.status === "active" && !game.winner) return null;
 
   const message = game.winner
-    ? `${game.winner === "white" ? "White" : "Black"} wins on time.`
+    ? `${game.winner === "white" ? "White" : "Black"} wins ${endReason === "resignation" ? "by resignation" : "on time"}.`
     : game.status === "draw"
     ? "Draw!"
     : game.status === "checkmate"

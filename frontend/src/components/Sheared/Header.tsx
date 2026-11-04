@@ -1,4 +1,3 @@
-import { signOut } from "../../lib/auth";
 import { useIsAuthenticated } from "../../lib/authorization";
 
 type HeaderProps = {
@@ -7,9 +6,6 @@ type HeaderProps = {
 
 const Header = ({ onSettingsClick }: HeaderProps) => {
   const isAuthenticated = useIsAuthenticated();
-  const handleLogOut = async () => {
-    await signOut();  
-  };
   return (
     <header className="absolute flex justify-around top-0 left-0 w-full bg-gray-800 text-white p-4">
       <h1>
@@ -19,13 +15,6 @@ const Header = ({ onSettingsClick }: HeaderProps) => {
       </h1>
       <nav>
         <ul className="flex space-x-4">
-          <button
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg"
-            onClick={() => handleLogOut()}
-          >
-            Log Out
-          </button>
-
           {isAuthenticated === false ? (
             <>
               <li>

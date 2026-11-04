@@ -1,4 +1,4 @@
-import { TIME_CONTROL_OPTIONS } from "../../constants/timeControls";
+import { SOLO_TIME_CONTROL_OPTIONS } from "../../constants/timeControls";
 import type { GameOutcome, GameSummary } from "../../lib/history";
 
 type GameHistoryProps = {
@@ -16,7 +16,7 @@ const OUTCOME_STYLES: Record<GameOutcome, { label: string; className: string }> 
   draw: { label: "Draw", className: "bg-gray-500" },
 };
 
-const timeControlLabel = (id: string) => TIME_CONTROL_OPTIONS.find((option) => option.id === id)?.label ?? id;
+const timeControlLabel = (id: string) => SOLO_TIME_CONTROL_OPTIONS.find((option) => option.id === id)?.label ?? id;
 
 const GameRow = ({ game }: { game: GameSummary }) => {
   const outcome = game.outcome ? OUTCOME_STYLES[game.outcome] : { label: "In progress", className: "bg-blue-500" };

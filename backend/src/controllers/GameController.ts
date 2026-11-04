@@ -6,11 +6,14 @@ import type { Color, GameStatus, MoveData, Position } from "../types/chess";
 import {
   DEFAULT_TIME_CONTROL,
   TIME_CONTROLS,
+  UNTIMED_TIME_CONTROL,
   applyMoveToClock,
   createClock,
+  isSoloTimeControlId,
   isTimeControlId,
   remainingAt,
   type Clock,
+  type SoloTimeControlId,
   type TimeControlId,
 } from "../game/timeControls";
 import { BotDifficultyLevels, type BotDifficultyLevel } from "../bot/botDifficultyLevels";
@@ -72,28 +75,34 @@ const clockFromRow = (row: GameRow): Clock => ({
 
 const opponentOf = (color: Color): Color => (color === "white" ? "black" : "white");
 
-// Row data for a fresh game with a full clock. Solo games have no black player.
+// Row data for a fresh game. Solo games have no black player. Untimed games store no clock and no time limit.
 export const newGameData = (
-  timeControlId: TimeControlId,
+  timeControlId: SoloTimeControlId,
   whitePlayerId: string | null,
   blackPlayerId: string | null,
   now: number,
+  untimed = false,
 ) => {
-  const clock = createClock(timeControlId, now);
+  const clockTimeControl = !untimed && isTimeControlId(timeControlId) ? timeControlId : null;
+  const clock = clockTimeControl ? createClock(clockTimeControl, now) : null;
   return {
     clock,
     data: {
       ...(whitePlayerId ? { whitePlayerId } : {}),
       ...(blackPlayerId ? { blackPlayerId } : {}),
       timeControlId,
-      timeInitialMs: TIME_CONTROLS[timeControlId].initialMs,
-      timeIncrementMs: TIME_CONTROLS[timeControlId].incrementMs,
-      whiteRemainingMs: clock.whiteRemainingMs,
-      blackRemainingMs: clock.blackRemainingMs,
-      lastMoveAt: new Date(clock.lastMoveAt),
+      timeInitialMs: clockTimeControl ? TIME_CONTROLS[clockTimeControl].initialMs : 0,
+      timeIncrementMs: clockTimeControl ? TIME_CONTROLS[clockTimeControl].incrementMs : 0,
+      whiteRemainingMs: clock?.whiteRemainingMs ?? 0,
+      blackRemainingMs: clock?.blackRemainingMs ?? 0,
+      lastMoveAt: clock ? new Date(clock.lastMoveAt) : null,
     },
   };
 };
+
+// Bot games and untimed solo games have no clock, so moves never time out.
+const isUntimedGame = (row: GameRow): boolean =>
+  row.botColor !== null || row.timeControlId === UNTIMED_TIME_CONTROL;
 
 // In a two-player game each player may only move their own color. Solo games let the owner move both.
 // In a bot game the bot's color is never movable by the player.
@@ -150,7 +159,7 @@ export const createNewGame = async (req: Request, res: Response) => {
     botDifficulty?: unknown;
     playerColor?: unknown;
   };
-  if (timeControl !== undefined && !isTimeControlId(timeControl)) {
+  if (timeControl !== undefined && !isSoloTimeControlId(timeControl)) {
     return res.status(400).send("Invalid time control");
   }
   if (botDifficulty !== undefined && !isBotDifficultyLevel(botDifficulty)) {
@@ -159,12 +168,13 @@ export const createNewGame = async (req: Request, res: Response) => {
   if (playerColor !== undefined && !isColor(playerColor)) {
     return res.status(400).send("Invalid player color");
   }
-  const timeControlId = isTimeControlId(timeControl) ? timeControl : DEFAULT_TIME_CONTROL;
   const userId = getUserId(res);
   const humanColor: Color = isColor(playerColor) ? playerColor : "white";
 
   const game = new ChessGame();
   const botLevel = isBotDifficultyLevel(botDifficulty) ? botDifficulty : null;
+  // Bot games are untimed; the time control is only used for human games.
+  const timeControlId: SoloTimeControlId = botLevel ? "10+0" : (isSoloTimeControlId(timeControl) ? timeControl : DEFAULT_TIME_CONTROL);
   const botColor = botLevel ? opponentOf(humanColor) : null;
 
   // White moves first. When the bot is white, its opening move is chosen before the game row is written,
@@ -183,6 +193,7 @@ export const createNewGame = async (req: Request, res: Response) => {
     humanColor === "white" ? userId : null,
     humanColor === "black" ? userId : null,
     Date.now(),
+    botLevel !== null,
   );
   const row = await prisma.game.create({
     data: {
@@ -190,9 +201,9 @@ export const createNewGame = async (req: Request, res: Response) => {
       ...(botLevel && botColor ? { botDifficulty: botLevel, botColor } : {}),
       ...(botMove && botColor
         ? {
-            currentTurn: game.getCurrentTurn(),
-            moves: { create: { ply: 1, color: botColor, move: moveJson(botMove) } },
-          }
+          currentTurn: game.getCurrentTurn(),
+          moves: { create: { ply: 1, color: botColor, move: moveJson(botMove) } },
+        }
         : {}),
     },
   });
@@ -202,7 +213,7 @@ export const createNewGame = async (req: Request, res: Response) => {
     boardState: game.getBoardState(),
     currentTurn: game.getCurrentTurn(),
     timeControl: timeControlId,
-    clock: clockView(clock),
+    clock: clock ? clockView(clock) : null,
     botDifficulty: row.botDifficulty,
     botColor: row.botColor,
     botMove,
@@ -225,8 +236,8 @@ export const makeMove = async (req: Request, res: Response) => {
   if (row.status === "finished") return res.status(409).send("Game is over");
 
   const now = Date.now();
-  const update = applyMoveToClock(clockFromRow(row), color, now, row.timeIncrementMs);
-  if (update.timedOut) {
+  const update = isUntimedGame(row) ? null : applyMoveToClock(clockFromRow(row), color, now, row.timeIncrementMs);
+  if (update?.timedOut) {
     const winner = opponentOf(color);
     await finishGame(row.id, update.clock, now, { winner, endReason: "timeout" });
     return res.status(409).json({ error: "Time expired", winner, clock: clockView(update.clock) });
@@ -255,9 +266,7 @@ export const makeMove = async (req: Request, res: Response) => {
   const finalStatus = game.getGameStatus();
   const mover: Color = botMove && botColor ? botColor : color;
   const ended = endOfGame(finalStatus, mover);
-  const clock = botMove && botColor
-    ? applyMoveToClock(update.clock, botColor, now, row.timeIncrementMs).clock
-    : update.clock;
+  const clock = update?.clock ?? null;
   const savedMoves: { ply: number; color: Color; move: MoveData }[] = [
     { ply: moveCount + 1, color, move: moveData },
     ...(botMove && botColor ? [{ ply: moveCount + 2, color: botColor, move: botMove }] : []),
@@ -278,9 +287,7 @@ export const makeMove = async (req: Request, res: Response) => {
     prisma.game.update({
       where: { id: row.id },
       data: {
-        whiteRemainingMs: clock.whiteRemainingMs,
-        blackRemainingMs: clock.blackRemainingMs,
-        lastMoveAt: new Date(now),
+        ...(clock ? { whiteRemainingMs: clock.whiteRemainingMs, blackRemainingMs: clock.blackRemainingMs, lastMoveAt: new Date(now) } : {}),
         currentTurn: game.getCurrentTurn(),
         // Moving counts as turning down a draw offer made by the other side.
         drawOfferedBy: row.drawOfferedBy === color ? row.drawOfferedBy : null,
@@ -315,7 +322,7 @@ export const makeMove = async (req: Request, res: Response) => {
     currentTurn: game.getCurrentTurn(),
     status: finalStatus,
     legalMoves,
-    clock: clockView(clock),
+    clock: clock ? clockView(clock) : null,
     botMove,
   });
   console.info(JSON.stringify({
@@ -365,7 +372,7 @@ const finishGame = (
 
 // Ends the game on time when the side to move has run out of clock. Returns the result, or null if the game goes on.
 const flagIfExpired = async ({ row, game }: LoadedGame, now: number): Promise<{ winner: Color; clock: Clock } | null> => {
-  if (row.status === "finished") return null;
+  if (row.status === "finished" || isUntimedGame(row)) return null;
 
   const clock = clockFromRow(row);
   const turn = game.getCurrentTurn();
@@ -387,6 +394,7 @@ export const timeoutGame = async (req: Request, res: Response) => {
   const loaded = await loadOwnedGame(gameId, getUserId(res));
   if (!loaded) return res.status(404).send("Game not found");
   if (loaded.row.status === "finished") return res.status(409).send("Game is over");
+  if (isUntimedGame(loaded.row)) return res.status(409).send("Game has no clock");
 
   const flagged = await flagIfExpired(loaded, Date.now());
   if (!flagged) return res.status(409).send("Time has not expired");
@@ -405,6 +413,9 @@ export const getAllLegalMoves = async (req: Request, res: Response) => {
 
 // The color a player has in a two-player game. Solo games have no fixed seat.
 const seatOf = (row: GameRow, userId: string): Color | null => {
+  if (row.botColor) {
+    return row.whitePlayerId === userId || row.blackPlayerId === userId ? opponentOf(row.botColor) : null;
+  }
   if (!row.whitePlayerId || !row.blackPlayerId) return null;
   return row.whitePlayerId === userId ? "white" : "black";
 };
@@ -415,9 +426,9 @@ const winnerOf = (result: GameRow["result"]): Color | null =>
 const gameView = ({ row, game, moves }: LoadedGame, userId: string, now: number) => {
   const finished = row.status === "finished";
   const turn = game.getCurrentTurn();
-  const clock = clockView(clockFromRow(row));
+  const clock = isUntimedGame(row) ? null : clockView(clockFromRow(row));
   // The stored time is from the last move, so the side to move is charged for the time since then.
-  if (!finished) {
+  if (clock && !finished) {
     const left = Math.max(0, remainingAt(clockFromRow(row), turn, now));
     if (turn === "white") clock.whiteRemainingMs = left;
     else clock.blackRemainingMs = left;
@@ -467,8 +478,13 @@ export const getGame = async (req: Request, res: Response) => {
 
 type ActiveGame = { loaded: LoadedGame; seat: Color };
 
-// Shared checks for resigning and draw offers: a two-player game that is still running. Sends the error itself.
-const loadActiveTwoPlayerGame = async (req: Request, res: Response): Promise<ActiveGame | null> => {
+// Shared checks for resigning and draw offers: a running game the viewer has a seat in. Sends the error itself.
+// Draw offers pass twoPlayerOnly, which rejects bot games.
+const loadActiveSeatedGame = async (
+  req: Request,
+  res: Response,
+  { twoPlayerOnly }: { twoPlayerOnly: boolean },
+): Promise<ActiveGame | null> => {
   const { gameId } = (req.body ?? {}) as { gameId?: unknown };
   if (typeof gameId !== "string") {
     res.status(400).send("Invalid request body");
@@ -480,7 +496,7 @@ const loadActiveTwoPlayerGame = async (req: Request, res: Response): Promise<Act
     return null;
   }
   const seat = seatOf(loaded.row, getUserId(res));
-  if (!seat) {
+  if (!seat || (twoPlayerOnly && loaded.row.botColor !== null)) {
     res.status(400).send("Not a two-player game");
     return null;
   }
@@ -498,7 +514,7 @@ const loadActiveTwoPlayerGame = async (req: Request, res: Response): Promise<Act
 
 // The conditional updates below only match a running game, so a result that landed first is never overwritten.
 export const resignGame = async (req: Request, res: Response) => {
-  const active = await loadActiveTwoPlayerGame(req, res);
+  const active = await loadActiveSeatedGame(req, res, { twoPlayerOnly: false });
   if (!active) return;
   const { loaded, seat } = active;
 
@@ -519,7 +535,7 @@ export const resignGame = async (req: Request, res: Response) => {
 }
 
 export const offerDraw = async (req: Request, res: Response) => {
-  const active = await loadActiveTwoPlayerGame(req, res);
+  const active = await loadActiveSeatedGame(req, res, { twoPlayerOnly: true });
   if (!active) return;
   const { loaded, seat } = active;
 
@@ -533,7 +549,7 @@ export const offerDraw = async (req: Request, res: Response) => {
 }
 
 export const acceptDraw = async (req: Request, res: Response) => {
-  const active = await loadActiveTwoPlayerGame(req, res);
+  const active = await loadActiveSeatedGame(req, res, { twoPlayerOnly: true });
   if (!active) return;
   const { loaded, seat } = active;
 
@@ -547,7 +563,7 @@ export const acceptDraw = async (req: Request, res: Response) => {
 }
 
 export const declineDraw = async (req: Request, res: Response) => {
-  const active = await loadActiveTwoPlayerGame(req, res);
+  const active = await loadActiveSeatedGame(req, res, { twoPlayerOnly: true });
   if (!active) return;
   const { loaded, seat } = active;
 

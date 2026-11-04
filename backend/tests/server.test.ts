@@ -51,6 +51,8 @@ const {
       finishedAt: null,
       lastMoveAt: null,
       drawOfferedBy: null,
+      botColor: null,
+      botDifficulty: null,
       moves: [],
       ...data,
     };
@@ -439,6 +441,16 @@ describe("POST /api/game with a bot", () => {
     });
   });
 
+  it("creates an untimed game that ignores the requested time control", async () => {
+    const res = await createBotGame({ botDifficulty: "easy", playerColor: "white", timeControl: "1+0" });
+    const body = (await res.json()) as BotGameResponse;
+
+    expect(body).toMatchObject({ timeControl: "10+0", clock: null });
+    expect(mockGameCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ timeInitialMs: 0, timeIncrementMs: 0, lastMoveAt: null }),
+    });
+  });
+
   it("returns 503 and creates no game when the engine fails", async () => {
     mockBestMove.mockRejectedValueOnce(new Error("engine crashed"));
     const res = await createBotGame({ botDifficulty: "hard", playerColor: "black" });
@@ -505,6 +517,137 @@ describe("POST /api/game/move in a bot game", () => {
 
     expect(res.status).toBe(403);
     expect(mockBestMove).not.toHaveBeenCalled();
+  });
+});
+
+describe("untimed bot games", () => {
+  const createWhiteBotGame = async (): Promise<GameResponse> => {
+    const res = await fetch(`${baseUrl}/game`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookie("token-a") },
+      body: JSON.stringify({ botDifficulty: "easy", playerColor: "white" }),
+    });
+    return (await res.json()) as GameResponse;
+  };
+
+  const advanceClockBy = (ms: number) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + ms);
+  };
+
+  beforeEach(() => {
+    mockBestMove.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does not time out a move, however long the player takes", async () => {
+    const { gameId } = await createWhiteBotGame();
+    advanceClockBy(3_600_000);
+    mockBestMove.mockResolvedValueOnce("e7e5");
+
+    const res = await postMove({ gameId, moveData: e2e4, color: "white" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ clock: null, botMove: expect.anything() });
+    expect(fakeGames.get(gameId)).toMatchObject({ status: "active" });
+  });
+
+  it("does not report a timeout when the game is loaded", async () => {
+    const { gameId } = await createWhiteBotGame();
+    advanceClockBy(3_600_000);
+
+    const res = await fetch(`${baseUrl}/game/${gameId}`, { headers: sessionCookie("token-a") });
+
+    expect(await res.json()).toMatchObject({ finished: false, endReason: null, clock: null });
+  });
+
+  it("lets the player resign a bot game", async () => {
+    const { gameId } = await createWhiteBotGame();
+
+    const res = await fetch(`${baseUrl}/game/resign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookie("token-a") },
+      body: JSON.stringify({ gameId }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ winner: "black" });
+    expect(fakeGames.get(gameId)).toMatchObject({ status: "finished", result: "black_wins", endReason: "resignation" });
+  });
+
+  it("rejects draw offers in a bot game", async () => {
+    const { gameId } = await createWhiteBotGame();
+
+    const res = await fetch(`${baseUrl}/game/draw/offer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookie("token-a") },
+      body: JSON.stringify({ gameId }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("still ends a human game on time", async () => {
+    const created = await fetch(`${baseUrl}/game`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookie("token-a") },
+      body: JSON.stringify({ timeControl: "1+0", playerColor: "white" }),
+    });
+    const { gameId } = (await created.json()) as GameResponse;
+    advanceClockBy(61_000);
+
+    const res = await postMove({ gameId, moveData: e2e4, color: "white" });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: "Time expired", winner: "black" });
+  });
+
+  it("creates an untimed solo game with no clock", async () => {
+    const res = await fetch(`${baseUrl}/game`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookie("token-a") },
+      body: JSON.stringify({ timeControl: "untimed" }),
+    });
+    const { gameId, ...body } = (await res.json()) as GameResponse;
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ timeControl: "untimed", clock: null });
+    expect(fakeGames.get(gameId)).toMatchObject({
+      timeControlId: "untimed",
+      timeInitialMs: 0,
+      timeIncrementMs: 0,
+      lastMoveAt: null,
+    });
+  });
+
+  it("never times out an untimed solo move or load", async () => {
+    const created = await fetch(`${baseUrl}/game`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookie("token-a") },
+      body: JSON.stringify({ timeControl: "untimed" }),
+    });
+    const { gameId } = (await created.json()) as GameResponse;
+    advanceClockBy(3_600_000);
+
+    const loaded = await fetch(`${baseUrl}/game/${gameId}`, { headers: sessionCookie("token-a") });
+    const moved = await postMove({ gameId, moveData: e2e4, color: "white" });
+
+    expect(await loaded.json()).toMatchObject({ finished: false, endReason: null, clock: null });
+    expect(moved.status).toBe(200);
+    expect(await moved.json()).toMatchObject({ clock: null, currentTurn: "black" });
+  });
+
+  it("rejects an unknown time control when creating a game", async () => {
+    const res = await fetch(`${baseUrl}/game`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookie("token-a") },
+      body: JSON.stringify({ timeControl: "bogus" }),
+    });
+
+    expect(res.status).toBe(400);
   });
 });
 
