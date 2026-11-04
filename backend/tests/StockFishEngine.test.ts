@@ -6,7 +6,7 @@ import type { Position } from "../src/types/chess";
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 // Fool's mate: white is checkmated, so Stockfish reports "bestmove (none)".
 const CHECKMATED_FEN = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
-const SETTINGS = { elo: 1500, moveTimeMs: 200 };
+const SETTINGS = { elo: 1500, moveTimeMs: 200, limitStrength: true };
 const ENGINE_TEST_TIMEOUT_MS = 20_000;
 const MIN_ELO = 1320;
 const MAX_ELO = 3000;
@@ -52,7 +52,7 @@ const SEARCH_RUNS = 12;
 const distinctMovesAt = async (elo: number): Promise<number> => {
   const moves = new Set<string | null>();
   for (let run = 0; run < SEARCH_RUNS; run++) {
-    moves.add(await botEngine.bestMove(START_FEN, { elo, moveTimeMs: 100 }));
+    moves.add(await botEngine.bestMove(START_FEN, { elo, moveTimeMs: 100, limitStrength: true }));
   }
   return moves.size;
 };

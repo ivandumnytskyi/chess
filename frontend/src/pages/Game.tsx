@@ -106,6 +106,7 @@ async function fetchAllLegalMoves(
 type GameStateView = {
   gameId: string;
   yourColor: Color | null;
+  isBotGame: boolean;
   boardState: { squares: Cell[][] };
   currentTurn: Color;
   status: GameStatus;
@@ -149,6 +150,7 @@ function Game() {
   } | null>(null);
   // Set in an online game to the side this player controls; null for a local game where one player moves both sides.
   const [seat, setSeat] = useState<Color | null>(null);
+  const [isBotGame, setIsBotGame] = useState(false);
   const { id: routeGameId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   // Number of moves the board currently shows, so polling only animates a move it has not shown yet.
@@ -201,6 +203,7 @@ function Game() {
     setClock({ ...view.clock, syncedAt: Date.now() });
     setMovesByPiece(toMovesByPiece(view.legalMoves));
     setSeat(view.yourColor);
+    setIsBotGame(view.isBotGame);
   }, []);
 
   // Reloads the full game and animates a move the board has not shown yet. Skipped while this player's own move is in flight, since its response updates the board.
@@ -553,11 +556,13 @@ function Game() {
       )}
       {game && clock ? (
         <div className="flex flex-col items-center gap-2 overflow-hidden w-[min(100vw,calc(90vh-7rem))] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 absolute">
-          <Clock
-            color="black"
-            remainingMs={remainingFor("black")}
-            active={!isOver && game.currentTurn === "black"}
-          />
+          {!isBotGame && (
+            <Clock
+              color="black"
+              remainingMs={remainingFor("black")}
+              active={!isOver && game.currentTurn === "black"}
+            />
+          )}
           <div className="grid grid-rows-8 gap-0 w-full aspect-square relative">
             {isOver && (
               <GameOverlay
@@ -583,11 +588,13 @@ function Game() {
               />
             )}
           </div>
-          <Clock
-            color="white"
-            remainingMs={remainingFor("white")}
-            active={!isOver && game.currentTurn === "white"}
-          />
+          {!isBotGame && (
+            <Clock
+              color="white"
+              remainingMs={remainingFor("white")}
+              active={!isOver && game.currentTurn === "white"}
+            />
+          )}
         </div>
       ) : routeGameId ? (
         !error && (

@@ -3,6 +3,7 @@ import { Worker } from 'node:worker_threads'
 export type BotSettings = {
   elo: number
   moveTimeMs: number
+  limitStrength: boolean
 }
 
 type Waiter = {
@@ -52,7 +53,7 @@ export class StockfishBotEngine {
   private async search(fen: string, settings: BotSettings): Promise<string | null> {
     try {
       const worker = await this.ensureReady()
-      this.send(worker, `setoption name UCI_LimitStrength value true`)
+      this.send(worker, `setoption name UCI_LimitStrength value ${settings.limitStrength ? 'true' : 'false'}`)
       this.send(worker, `setoption name UCI_Elo value ${settings.elo}`)
 
       // Register the waiter before sending the search so a fast reply can't be missed.

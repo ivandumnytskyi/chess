@@ -440,6 +440,7 @@ const gameView = ({ row, game, moves }: LoadedGame, userId: string, now: number)
     lastMove: lastMove ? { from: lastMove.from, to: lastMove.to } : null,
     drawOfferedBy: finished ? null : row.drawOfferedBy,
     players: { white: row.whitePlayer?.username ?? null, black: row.blackPlayer?.username ?? null },
+    isBotGame: row.botColor !== null,
     clock,
   };
 };
