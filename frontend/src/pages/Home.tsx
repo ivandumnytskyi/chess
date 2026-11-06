@@ -28,7 +28,7 @@ const Home = () => {
       <Header onSettingsClick={() => setIsSettingsOpen(true)} />
 
       <main className="mx-auto max-w-3xl space-y-10 px-6 pb-12 pt-28">
-        <section className="flex gap-4">
+        <section className="flex flex-col md:flex-row gap-4">
           {loading ? (
             <p className="text-cream">Loading...</p>
           ) : account ? (

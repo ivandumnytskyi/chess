@@ -12,15 +12,19 @@ type PromotionProps = {
   theme: string;
   column: number;
   onSelect: (piece: PromotionPiece) => void;
+  flipped?: boolean;
 };
 
-const Promotion = ({ color, theme, column, onSelect }: PromotionProps) => {
+const Promotion = ({ color, theme, column, onSelect, flipped = false }: PromotionProps) => {
+  // The promoting square is at the top of the default board for white and at the bottom for black; flipping swaps both.
+  const atTop = (color === "white") !== flipped;
+  const displayColumn = flipped ? 7 - column : column;
   return (
     <div
       className={`absolute z-50 w-[12.5%] h-1/2 flex bg-white rounded-lg overflow-hidden ${
-        color === "white" ? "top-0 flex-col" : "bottom-0 flex-col-reverse"
+        atTop ? "top-0 flex-col" : "bottom-0 flex-col-reverse"
       }`}
-      style={{ left: `${column * 12.5}%` }}
+      style={{ left: `${displayColumn * 12.5}%` }}
     >
       {OPTIONS.map(({ code, piece }) => (
         <img

@@ -11,13 +11,20 @@ type BoardProps = {
   legalMoves: { row: number; col: number }[];
   pieceTheme: string;
   lastMove: { from: Position; to: Position; id: number } | null;
+  flipped?: boolean;
 };
-const Board = ({ squares, themeIndex, handleSquareClick, selectedPiece, legalMoves, pieceTheme, lastMove }: BoardProps) => {
+// Indexes in display order. Clicks and state keep the real board indexes; only drawing order changes.
+const displayOrder = (length: number, flipped: boolean) =>
+  Array.from({ length }, (_, i) => (flipped ? length - 1 - i : i));
+
+const Board = ({ squares, themeIndex, handleSquareClick, selectedPiece, legalMoves, pieceTheme, lastMove, flipped = false }: BoardProps) => {
+  const direction = flipped ? -1 : 1;
   return (
     <div className="contents">
-    {squares.map((row, rowIndex) => (
+    {displayOrder(squares.length, flipped).map((rowIndex) => (
           <div key={rowIndex} className="w-full flex">
-            {row.map((cell, colIndex) => {
+            {displayOrder(squares[rowIndex].length, flipped).map((colIndex) => {
+              const cell = squares[rowIndex][colIndex];
               const isBlack = (rowIndex + colIndex) % 2 === 1;
               const isMoveTarget = lastMove?.to.row === rowIndex && lastMove?.to.col === colIndex;
               return (
@@ -44,8 +51,8 @@ const Board = ({ squares, themeIndex, handleSquareClick, selectedPiece, legalMov
                       offset={
                         isMoveTarget && lastMove
                           ? {
-                              x: (lastMove.from.col - lastMove.to.col) * 100,
-                              y: (lastMove.from.row - lastMove.to.row) * 100,
+                              x: direction * (lastMove.from.col - lastMove.to.col) * 100,
+                              y: direction * (lastMove.from.row - lastMove.to.row) * 100,
                             }
                           : undefined
                       }

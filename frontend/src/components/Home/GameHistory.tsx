@@ -25,7 +25,7 @@ const GameRow = ({ game }: { game: GameSummary }) => {
     <li className={`flex items-center justify-between gap-4 rounded-xl px-5 py-4 ${outcome.className}`}>
       <div className="flex items-center gap-4">
         <div>
-          <p className="font-medium">{game.opponentUsername === 'guest' ? "vs guest" : game.opponentUsername ? "vs " + game.opponentUsername : "Solo"}</p>
+          <p className="font-medium">{game.isBot ? "vs bot" : game.opponentUsername === 'guest' ? "vs guest" : game.opponentUsername ? "vs " + game.opponentUsername : "Solo"}</p>
           <p className="text-sm text-cream">
             {timeControlLabel(game.timeControlId)} · playing {game.color}
           </p>

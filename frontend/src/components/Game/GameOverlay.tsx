@@ -1,5 +1,24 @@
 import type { GameView } from "../../types";
 
+const REASON_TEXT: Record<string, string> = {
+  checkmate: "by checkmate",
+  resignation: "by resignation",
+  timeout: "on time",
+};
+
+const getEndMessage = (game: GameView, endReason: string | null): string => {
+  if (game.winner) {
+    const winnerName = game.winner === "white" ? "White" : "Black";
+    const reason = endReason ? REASON_TEXT[endReason] : undefined;
+    return reason ? `${winnerName} wins ${reason}.` : `${winnerName} wins.`;
+  }
+  if (game.status === "draw") return "Draw!";
+  if (game.status === "checkmate") {
+    return `${game.currentTurn === "white" ? "Black" : "White"} wins by checkmate.`;
+  }
+  return "Stalemate!";
+};
+
 const GameOverlay = ({
   game,
   endReason,
@@ -11,13 +30,7 @@ const GameOverlay = ({
 }) => {
   if (game.status === "active" && !game.winner) return null;
 
-  const message = game.winner
-    ? `${game.winner === "white" ? "White" : "Black"} wins ${endReason === "resignation" ? "by resignation" : "on time"}.`
-    : game.status === "draw"
-    ? "Draw!"
-    : game.status === "checkmate"
-    ? (game.currentTurn === "white" ? "Black" : "White") + " wins."
-    : "Stalemate!";
+  const message = getEndMessage(game, endReason);
 
   return (
     <>

@@ -7,6 +7,7 @@ export type GameSummary = {
   id: string;
   color: "white" | "black";
   opponentUsername: string | null;
+  isBot: boolean;
   timeControlId: string;
   status: string;
   result: string | null;

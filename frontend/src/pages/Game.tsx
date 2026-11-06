@@ -354,7 +354,7 @@ function Game() {
         }
       },
       onSubscribed: refresh,
-    })
+    }, () => cancelled)
       .then((unsubscribe) => {
         if (cancelled) unsubscribe();
         else stop = unsubscribe;
@@ -373,6 +373,10 @@ function Game() {
   }, [routeGameId, syncFromServer, showRemoteMove]);
 
   const squares = game?.squares ?? [];
+  // A player seated as black sees the board from black's side; solo games stay with white at the bottom.
+  const flipped = seat === "black";
+  const topColor: Color = flipped ? "white" : "black";
+  const bottomColor: Color = flipped ? "black" : "white";
 
   const startGameWith = useCallback(async (id: SoloTimeControlId) => {
     setTimeControl(id);
@@ -504,6 +508,8 @@ function Game() {
         boardState: { squares: Cell[][] };
         currentTurn: Color;
         status: GameStatus;
+        winner: Color | null;
+        endReason: string | null;
         legalMoves: PieceMoves[];
         clock: ServerClock | null;
         botMove: MoveData | null;
@@ -515,9 +521,11 @@ function Game() {
               squares: data.boardState.squares,
               currentTurn: data.currentTurn,
               status: data.status,
+              winner: data.winner ?? undefined,
             }
           : prev,
       );
+      setEndReason(data.endReason);
       setClock(data.clock ? { ...data.clock, syncedAt: Date.now() } : null);
       setMovesByPiece(toMovesByPiece(data.legalMoves));
       // The response already includes the bot's reply, so both plies are counted here. Otherwise the bot's
@@ -640,9 +648,9 @@ function Game() {
         <div className="flex flex-col items-center gap-2 overflow-hidden w-[min(100vw,calc(90vh-7rem))] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 absolute">
           {clock !== null && (
             <Clock
-              color="black"
-              remainingMs={remainingFor("black")}
-              active={!isOver && game.currentTurn === "black"}
+              color={topColor}
+              remainingMs={remainingFor(topColor)}
+              active={!isOver && game.currentTurn === topColor}
             />
           )}
           <div className="grid grid-rows-8 gap-0 w-full aspect-square relative">
@@ -667,6 +675,7 @@ function Game() {
               legalMoves={legalMoves}
               pieceTheme={pieceTheme}
               lastMove={lastMove}
+              flipped={flipped}
             />
             {pendingPromotion && (
               <Promotion
@@ -674,15 +683,16 @@ function Game() {
                 theme={pieceTheme}
                 column={pendingPromotion.to.col}
                 onSelect={choosePromotion}
+                flipped={flipped}
               />
             )}
           </div>
           <div className="flex w-full items-center justify-between gap-2">
             {clock !== null ? (
               <Clock
-                color="white"
-                remainingMs={remainingFor("white")}
-                active={!isOver && game.currentTurn === "white"}
+                color={bottomColor}
+                remainingMs={remainingFor(bottomColor)}
+                active={!isOver && game.currentTurn === bottomColor}
               />
             ) : (
               <span />

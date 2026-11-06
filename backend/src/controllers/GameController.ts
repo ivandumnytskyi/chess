@@ -311,6 +311,8 @@ export const makeMove = async (req: Request, res: Response) => {
     boardState,
     currentTurn: game.getCurrentTurn(),
     status: finalStatus,
+    winner: winnerOf(ended.result),
+    endReason: ended.endReason,
     legalMoves,
     clock: clock ? clockView(clock) : null,
     botMove,

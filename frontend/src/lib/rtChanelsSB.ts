@@ -67,15 +67,14 @@ export const authorizeRealtime = () => {
 export const subscribeToGame = async (
   gameId: string,
   handlers: { onGame: (row: GameRow) => void; onMove: (event: GameMoveEvent) => void; onSubscribed?: () => void },
+  isCancelled: () => boolean = () => false,
 ) => {
   await authorizeRealtime();
 
-  // StrictMode runs effects twice in development, so drop any channel left for this game first.
-  const topic = `realtime:game:${gameId}`;
-  supabase
-    .getChannels()
-    .filter((existing) => existing.topic === topic)
-    .forEach((existing) => void supabase.removeChannel(existing));
+  // StrictMode runs effects twice in development. The first run is cancelled while it waits for auth,
+  // so it must not create a channel. Removing channels by topic here is unsafe: the client drops every
+  // channel with the same topic when one is removed, which can silently kill the live subscription.
+  if (isCancelled()) return () => {};
 
   const channel = supabase
     .channel(`game:${gameId}`, { config: { private: true } })
