@@ -38,7 +38,7 @@ const UsernameForm = () => {
       <div className="flex gap-2">
         <input
           id="username"
-          className="p-2 border border-gray-300 rounded-full px-4 text-base"
+          className="p-2 rounded-full px-4 text-base"
           type="text"
           value={value}
           onChange={(e) => {
@@ -49,7 +49,7 @@ const UsernameForm = () => {
           title="3-20 letters, numbers or underscores"
           required={true}
         />
-        <button type="submit" className="px-4 py-2 bg-blue-500 text-white rounded-lg text-base">
+        <button type="submit" className="px-4 py-2 bg-ruby text-white rounded-lg text-base">
           Save
         </button>
       </div>

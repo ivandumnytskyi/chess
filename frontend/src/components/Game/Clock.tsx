@@ -26,7 +26,7 @@ const Clock = ({ color, remainingMs, active }: ClockProps) => {
   return (
     <div
       className={`flex justify-between items-center w-full px-4 py-2 rounded-lg text-2xl font-mono text-white ${
-        active ? "bg-blue-600" : "bg-neutral-700"
+        active ? "bg-ruby" : "bg-gray"
       }`}
     >
       <span className="text-base capitalize">{color}</span>

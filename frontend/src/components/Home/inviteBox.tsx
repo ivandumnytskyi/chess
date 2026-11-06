@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useInvites } from "../../lib/invite";
 
-const playLinkClass = "bg-indigo-500 text-white px-4 py-2 rounded";
+const playLinkClass = "bg-ruby text-white px-4 py-2 rounded";
 
 const InviteBox = () => {
   const navigate = useNavigate();
@@ -46,7 +46,7 @@ const InviteBox = () => {
       <p>Loading...</p>
     ) : (
       <>
-        <button onClick={() => refresh()} className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer">Refresh Invites</button>
+        <button onClick={() => refresh()} className="bg-ruby text-white px-4 py-2 rounded cursor-pointer">Refresh Invites</button>
         {error && <p className="text-red-500">{error}</p>}
         <div>
          { incoming.length === 0 && outgoing.length === 0 ? (

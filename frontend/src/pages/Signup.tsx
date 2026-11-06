@@ -27,14 +27,14 @@ const Signup = () => {
     <Header />    
     <div
       className="flex flex-col gap-4 items-center justify-center p-4 
-    absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#000000]"
+    absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black md:w-80 md:h-auto h-full w-full rounded-2xl border-2 border-white/20"
     >
      
-      <h1>Sign up</h1>
+      <h1 className="text-3xl font-bold">Sign up</h1>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full">
         <input
-          className="p-2 border border-gray-300 rounded-full px-4"
+          className="p-2 rounded-full px-4"
           type="text"
           placeholder="Username"
           value={username}
@@ -45,7 +45,7 @@ const Signup = () => {
         />
 
         <input
-          className="p-2 border border-gray-300 rounded-full px-4"
+          className="p-2 rounded-full px-4"
           type="email"
           placeholder="Email"
           value={email}
@@ -62,18 +62,18 @@ const Signup = () => {
           required={true}
         />
 
-        <button type="submit">Sign up</button>
+        <button type="submit" className="text-white py-1 bg-ruby w-full">Sign up</button>
       </form>
 
       <button
-        className="text-black bg-amber-50 w-full"
+        className="text-black py-1 bg-cream w-full"
         onClick={() => signInWithGoogle()}
       >
         Continue with Google
       </button>
 
       <p>
-        Have an account? <Link to="/login">Log in</Link>
+        Have an account? <Link to="/login" className="text-cream hover:text-white hover:underline bg-ruby py-1 px-2 rounded-lg ml-2">Log in</Link>
       </p>
     </div>
   </>

@@ -15,7 +15,7 @@ const TimeControlPicker = ({ value, onChange, onStart }: TimeControlPickerProps)
           <label
             key={option.id}
             className={`cursor-pointer border-2 px-4 py-2 rounded-lg ${
-              value === option.id ? "border-blue-500" : "border-white"
+              value === option.id ? "border-ruby" : "border-white"
             }`}
           >
             <input
@@ -30,7 +30,7 @@ const TimeControlPicker = ({ value, onChange, onStart }: TimeControlPickerProps)
           </label>
         ))}
       </fieldset>
-      <button className="px-6 py-2 bg-blue-500 text-white rounded" onClick={onStart}>
+      <button className="px-6 py-2 bg-ruby text-white rounded" onClick={onStart}>
         Start game
       </button>
     </div>

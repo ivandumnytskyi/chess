@@ -1,1 +1,45 @@
 @import "tailwindcss";
+
+:root{
+  --black: #030303;
+  --white: #f5f4f2;
+  --ruby: #70000e;
+  --cream: #c3b79d;
+  --gray: #2c2929;
+  --bone: #dcd7d4;
+}
+
+@theme {
+  --color-black: var(--black);
+  --color-white: var(--white);
+  --color-ruby: var(--ruby);
+  --color-cream: var(--cream);
+  --color-gray: var(--gray);
+  --color-bone: var(--bone);
+}
+
+body {
+  background-color: var(--gray);
+  color: var(--white);
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--cream);
+  outline-offset: 2px;
+}
+
+.bg-ruby:hover {
+  background-color: color-mix(in srgb, var(--ruby) 80%, var(--white));
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--ruby);
+}
+
+input {
+  border-width: 2px;
+  border-style: solid;
+  border-color: var(--gray);
+}

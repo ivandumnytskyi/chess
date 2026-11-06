@@ -19,17 +19,17 @@ const Home = () => {
   const canInviteFriend = Boolean(account?.username);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-gray text-white">
       <Header onSettingsClick={() => setIsSettingsOpen(true)} />
 
       <main className="mx-auto max-w-3xl space-y-10 px-6 pb-12 pt-28">
         <section>
           {loading ? (
-            <p className="text-gray-400">Loading...</p>
+            <p className="text-cream">Loading...</p>
           ) : account ? (
             <Profile username={account.username} email={account.email} />
           ) : (
-            <p className="text-gray-400">Playing as guest. Log in to save games and invite friends.</p>
+            <p className="text-cream">Playing as guest. Log in to save games and invite friends.</p>
           )}
         </section>
 
@@ -39,7 +39,7 @@ const Home = () => {
         <BotChoicer />
 
         {!loading && account && !canInviteFriend && (
-          <p className="text-sm text-gray-400">Choose a username in Settings to invite friends.</p>
+          <p className="text-sm text-cream">Choose a username in Settings to invite friends.</p>
         )}
 
         {!loading && account && (

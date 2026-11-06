@@ -7,7 +7,7 @@ type HeaderProps = {
 const Header = ({ onSettingsClick }: HeaderProps) => {
   const isAuthenticated = useIsAuthenticated();
   return (
-    <header className="absolute flex justify-around top-0 left-0 w-full bg-gray-800 text-white p-4">
+    <header className="absolute z-10 flex justify-around top-0 left-0 w-full bg-black text-white p-4">
       <h1>
         <a href="/" className="hover:underline">
           Chess Pet project
@@ -18,19 +18,19 @@ const Header = ({ onSettingsClick }: HeaderProps) => {
           {isAuthenticated === false ? (
             <>
               <li>
-                <a href="/signup" className="hover:underline">
+                <a href="/signup" className="text-cream hover:text-white hover:underline">
                   Sign up
                 </a>
               </li>
               <li>
-                <a href="/login" className="hover:underline">
+                <a href="/login" className="text-cream hover:text-white hover:underline">
                   Log in
                 </a>
               </li>
             </>
           ) : onSettingsClick ? (
             <li>
-              <button className="hover:underline" onClick={onSettingsClick}>
+              <button className="text-cream hover:text-white hover:underline" onClick={onSettingsClick}>
                 Settings
               </button>
             </li>

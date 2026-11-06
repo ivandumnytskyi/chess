@@ -26,12 +26,12 @@ const GameOverlay = ({
         <p>{message}</p>
          <a
           href="/"
-          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
+          className="mt-4 px-4 py-2 bg-ruby text-white rounded"
         >
           Home
         </a>
         <button
-          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
+          className="mt-4 px-4 py-2 bg-ruby text-white rounded"
           onClick={restart}
         >
           Restart

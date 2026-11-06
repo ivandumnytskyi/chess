@@ -45,7 +45,7 @@ const BotChoicer = () => {
                 <option value="white">White</option>
                 <option value="black">Black</option>
             </select>
-            <button type="submit" disabled={starting} className="border border-white hover:bg-gray-700 bg-black w-24 disabled:opacity-50">Play</button>
+            <button type="submit" disabled={starting} className="border border-white hover:bg-gray bg-black w-24 disabled:opacity-50">Play</button>
             {error && <p className="text-red-400 text-sm">{error}</p>}
         </form>
     );

@@ -24,7 +24,7 @@ const Settings = ({ onClose }: SettingsProps) => {
         <UsernameForm />
         <Selection />
         <button
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg"
+          className="px-4 py-2 bg-ruby text-white rounded-lg"
           onClick={() => handleLogOut()}
         >
           Log Out

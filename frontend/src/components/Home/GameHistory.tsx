@@ -19,19 +19,19 @@ const OUTCOME_STYLES: Record<GameOutcome, { label: string; className: string }> 
 const timeControlLabel = (id: string) => SOLO_TIME_CONTROL_OPTIONS.find((option) => option.id === id)?.label ?? id;
 
 const GameRow = ({ game }: { game: GameSummary }) => {
-  const outcome = game.outcome ? OUTCOME_STYLES[game.outcome] : { label: "In progress", className: "bg-blue-500" };
+  const outcome = game.outcome ? OUTCOME_STYLES[game.outcome] : { label: "In progress", className: "bg-ruby" };
 
   return (
     <li className={`flex items-center justify-between gap-4 rounded-xl px-5 py-4 ${outcome.className}`}>
       <div className="flex items-center gap-4">
         <div>
           <p className="font-medium">{game.opponentUsername === 'guest' ? "vs guest" : game.opponentUsername ? "vs " + game.opponentUsername : "Solo"}</p>
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-cream">
             {timeControlLabel(game.timeControlId)} · playing {game.color}
           </p>
         </div>
       </div>
-      <time className="text-sm text-gray-400" dateTime={game.createdAt}>
+      <time className="text-sm text-cream" dateTime={game.createdAt}>
         {new Date(game.createdAt).toLocaleDateString()}
       </time>
     </li>
@@ -44,11 +44,11 @@ const GameHistory = ({ games, loading, loadingMore, error, hasMore, onLoadMore }
       <h2 className="text-xl font-semibold">Game history</h2>
 
       {loading ? (
-        <p className="text-gray-400">Loading games...</p>
+        <p className="text-cream">Loading games...</p>
       ) : error ? (
         <p className="text-red-400">{error}</p>
       ) : games.length === 0 ? (
-        <p className="text-gray-400">No games yet. Start one above!</p>
+        <p className="text-cream">No games yet. Start one above!</p>
       ) : (
         <ul className="space-y-3">
           {games.map((game) => (
@@ -62,7 +62,7 @@ const GameHistory = ({ games, loading, loadingMore, error, hasMore, onLoadMore }
           type="button"
           onClick={onLoadMore}
           disabled={loadingMore}
-          className="rounded-lg bg-gray-700 px-4 py-2 hover:bg-gray-600 disabled:opacity-50"
+          className="rounded-lg bg-black px-4 py-2 hover:bg-gray disabled:opacity-50"
         >
           {loadingMore ? "Loading..." : "Load more"}
         </button>

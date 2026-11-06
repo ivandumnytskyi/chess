@@ -12,7 +12,7 @@ const Selection = () => {
           <label
             key={theme.name}
             className={`flex items-center gap-2 border-2 px-2 py-2 rounded-lg w-max ${
-              themeIndex === index ? "border-blue-500" : "border-white"
+              themeIndex === index ? "border-ruby" : "border-gray"
             }`}
           >
             <input
@@ -38,7 +38,7 @@ const Selection = () => {
           <label
             key={theme}
             className={`flex items-center gap-2 border-2  px-2 py-2 rounded-lg w-max ${
-              pieceTheme === theme ? "border-blue-500" : "border-white"
+              pieceTheme === theme ? "border-ruby" : "border-gray"
             }`}
           >
             <input

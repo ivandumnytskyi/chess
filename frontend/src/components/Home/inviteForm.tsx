@@ -34,7 +34,7 @@ const InviteForm = () => {
           <option value="random">Random</option>
         </select>
       </div>
-      <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer">Send Invite</button>
+      <button type="submit" className="bg-ruby text-white px-4 py-2 rounded cursor-pointer">Send Invite</button>
     </form>
   );
 };

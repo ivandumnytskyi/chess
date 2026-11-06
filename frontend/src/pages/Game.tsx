@@ -647,7 +647,7 @@ function Game() {
             )}
             {!isOver && seat !== null && (
               <button
-                className="px-4 py-2 bg-red-600 text-white rounded"
+                  className="px-4 py-2 bg-ruby text-white rounded"
                 onClick={resign}
               >
                 Resign
@@ -657,7 +657,7 @@ function Game() {
         </div>
       ) : routeGameId ? (
         !error && (
-          <p className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400">
+          <p className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-cream">
             Loading game...
           </p>
         )
