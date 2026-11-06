@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   GameView,
   Cell,
@@ -32,7 +32,7 @@ type ServerClock = { whiteRemainingMs: number; blackRemainingMs: number };
 
 async function createGame(
   timeControl: SoloTimeControlId,
-): Promise<{ game: GameView; clock: ClockState }> {
+): Promise<{ game: GameView; clock: ClockState | null }> {
   const res = await authorizedFetch(`${API_URL}/game`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -43,7 +43,7 @@ async function createGame(
     gameId: string;
     boardState: { squares: Cell[][] };
     currentTurn: Color;
-    clock: ServerClock;
+    clock: ServerClock | null;
   } = await res.json();
   return {
     game: {
@@ -52,7 +52,7 @@ async function createGame(
       currentTurn: data.currentTurn,
       status: "active",
     },
-    clock: { ...data.clock, syncedAt: Date.now() },
+    clock: data.clock ? { ...data.clock, syncedAt: Date.now() } : null,
   };
 }
 
@@ -370,9 +370,10 @@ function Game() {
 
   const squares = game?.squares ?? [];
 
-  const startGame = async () => {
+  const startGameWith = useCallback(async (id: SoloTimeControlId) => {
+    setTimeControl(id);
     try {
-      const { game: newGame, clock: newClock } = await createGame(timeControl);
+      const { game: newGame, clock: newClock } = await createGame(id);
       setGame(newGame);
       setClock(newClock);
       setEndReason(null);
@@ -384,7 +385,21 @@ function Game() {
     } catch {
       setError("Could not reach the server");
     }
-  };
+  }, []);
+
+  const startGame = () => startGameWith(timeControl);
+
+  // The Home page's "Play alone" modal passes the chosen time control in router state; start that game once.
+  const location = useLocation();
+  const autoStartRef = useRef(false);
+  useEffect(() => {
+    const requested = (location.state as { timeControl?: SoloTimeControlId } | null)
+      ?.timeControl;
+    if (routeGameId || !requested || autoStartRef.current) return;
+    autoStartRef.current = true;
+    navigate("/game", { replace: true, state: null });
+    void startGameWith(requested);
+  }, [location.state, routeGameId, navigate, startGameWith]);
 
   const restoreSnapshot = (snapshot: BoardSnapshot) => {
     setGame(snapshot.game);
@@ -662,11 +677,13 @@ function Game() {
           </p>
         )
       ) : (
-        <TimeControlPicker
-          value={timeControl}
-          onChange={setTimeControl}
-          onStart={startGame}
-        />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+          <TimeControlPicker
+            value={timeControl}
+            onChange={setTimeControl}
+            onStart={startGame}
+          />
+        </div>
       )}
     </>
   );

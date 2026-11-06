@@ -1,14 +1,21 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { API_URL, authorizedFetch } from "../../lib/authorization";
+import OptionPicker from "../Sheared/OptionPicker";
+import { COLOR_OPTIONS, type ColorOptionId } from "../../constants/colorOptions";
 
 type BotDifficulty = "easy" | "medium" | "hard";
-type PlayerColor = "white" | "black";
+
+const DIFFICULTY_OPTIONS = [
+    { id: "easy", label: "Easy" },
+    { id: "medium", label: "Medium" },
+    { id: "hard", label: "Hard" },
+] as const;
 
 const BotChoicer = () => {
     const navigate = useNavigate();
     const [difficulty, setDifficulty] = useState<BotDifficulty>("easy");
-    const [playerColor, setPlayerColor] = useState<PlayerColor>("white");
+    const [playerColor, setPlayerColor] = useState<ColorOptionId>("random");
     const [error, setError] = useState<string | null>(null);
     const [starting, setStarting] = useState(false);
 
@@ -16,11 +23,13 @@ const BotChoicer = () => {
         e.preventDefault();
         setError(null);
         setStarting(true);
+        // The bot endpoint takes a fixed color, so "random" is resolved here.
+        const resolvedColor = playerColor === "random" ? (Math.random() < 0.5 ? "white" : "black") : playerColor;
         try {
             const res = await authorizedFetch(`${API_URL}/game`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ botDifficulty: difficulty, playerColor }),
+                body: JSON.stringify({ botDifficulty: difficulty, playerColor: resolvedColor }),
             });
             if (!res.ok) throw new Error("Could not start bot game");
             const data: { gameId: string } = await res.json();
@@ -33,19 +42,22 @@ const BotChoicer = () => {
     };
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-4 flex flex-col border border-white p-4 max-w-40 items-center">
-            <label htmlFor="bot">Choose a bot:</label>
-            <select id="bot" name="bot" className="border border-white p-2 max-w-20" value={difficulty} onChange={(e) => setDifficulty(e.target.value as BotDifficulty)}>
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-            </select>
-            <label htmlFor="botColor">Play as:</label>
-            <select id="botColor" name="botColor" className="border border-white p-2 max-w-20" value={playerColor} onChange={(e) => setPlayerColor(e.target.value as PlayerColor)}>
-                <option value="white">White</option>
-                <option value="black">Black</option>
-            </select>
-            <button type="submit" disabled={starting} className="border border-white hover:bg-gray bg-black w-24 disabled:opacity-50">Play</button>
+        <form onSubmit={handleSubmit} className="flex flex-col items-center gap-6 text-white">
+            <OptionPicker
+                name="difficulty"
+                legend="Choose a bot"
+                options={DIFFICULTY_OPTIONS}
+                value={difficulty}
+                onChange={setDifficulty}
+            />
+            <OptionPicker
+                name="color"
+                legend="Choose color"
+                options={COLOR_OPTIONS}
+                value={playerColor}
+                onChange={setPlayerColor}
+            />
+            <button type="submit" disabled={starting} className="px-6 py-2 bg-ruby text-white rounded disabled:opacity-50">Play</button>
             {error && <p className="text-red-400 text-sm">{error}</p>}
         </form>
     );

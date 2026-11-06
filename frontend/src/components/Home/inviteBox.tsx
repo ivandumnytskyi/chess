@@ -45,18 +45,20 @@ const InviteBox = () => {
     {loading ? (
       <p>Loading...</p>
     ) : (
-      <>
-        <button onClick={() => refresh()} className="bg-ruby text-white px-4 py-2 rounded cursor-pointer">Refresh Invites</button>
+      <section className="flex flex-col gap-4">
+        <button onClick={() => refresh()} className="w-max rounded p-2 cursor-pointer">
+          <img src="/icons/reload.svg" alt="Refresh" className="inline-block w-6 h-6" />
+        </button>
         {error && <p className="text-red-500">{error}</p>}
-        <div>
+        <div className="flex gap-4">
          { incoming.length === 0 && outgoing.length === 0 ? (
            <p>No invites</p>
          ) : null}
          {incoming.map((invite) => (
            <div key={invite.id} className="border p-4 mb-4 flex gap-2">
              <p>From: {invite.from}</p>
-             <p>Time Control: {invite.timeControlId}</p>
-             <p>Color: {invite.color}</p>
+             <p>{invite.timeControlId}</p>
+             <p>{invite.color}</p>
              {invite.status === "accepted" && invite.gameId ? (
                <Link to={`/game/${invite.gameId}`} className={playLinkClass}>Play</Link>
              ) : (
@@ -79,7 +81,7 @@ const InviteBox = () => {
            </div>
          ))}
         </div>
-      </>
+      </section>
     )}
     </>
     
