@@ -4,7 +4,7 @@ import OptionPicker from "../Sheared/OptionPicker";
 import { TIME_CONTROL_OPTIONS, type TimeControlId } from "../../constants/timeControls";
 import { COLOR_OPTIONS, type ColorOptionId } from "../../constants/colorOptions";
 
-const InviteForm = () => {
+const InviteForm = ({ onClose }: { onClose: () => void }) => {
   const { send } = useInvites();
   const [username, setUsername] = useState("");
   const [timeControl, setTimeControl] = useState<TimeControlId>("10+0");
@@ -13,6 +13,7 @@ const InviteForm = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     send({ username, timeControl, color });
+    onClose();
   };
 
   return (

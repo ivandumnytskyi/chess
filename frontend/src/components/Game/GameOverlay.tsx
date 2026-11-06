@@ -7,7 +7,7 @@ const GameOverlay = ({
 }: {
   game: GameView;
   endReason: string | null;
-  restart: () => void;
+  restart?: () => void;
 }) => {
   if (game.status === "active" && !game.winner) return null;
 
@@ -30,12 +30,14 @@ const GameOverlay = ({
         >
           Home
         </a>
-        <button
-          className="mt-4 px-4 py-2 bg-ruby text-white rounded"
-          onClick={restart}
-        >
-          Restart
-        </button>
+        {restart && (
+          <button
+            className="mt-4 px-4 py-2 bg-ruby text-white rounded"
+            onClick={restart}
+          >
+            Restart
+          </button>
+        )}
       </div>
     </>
   );

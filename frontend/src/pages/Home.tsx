@@ -67,7 +67,7 @@ const Home = () => {
 
       {openAction === "friend" && (
         <ActionModal title="Play with friend" onClose={() => setOpenAction(null)}>
-          <InviteForm />
+          <InviteForm onClose={() => setOpenAction(null)} />
         </ActionModal>
       )}
 

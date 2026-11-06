@@ -1,5 +1,4 @@
 import { type Request, type Response } from "express";
-import { performance } from "node:perf_hooks";
 import type { User } from "@supabase/supabase-js";
 import { ChessGame } from "../game/ChessGame";
 import type { Color, GameStatus, MoveData, Position } from "../types/chess";
@@ -222,14 +221,11 @@ export const createNewGame = async (req: Request, res: Response) => {
 
 // 2. Make move → use gameId to find game
 export const makeMove = async (req: Request, res: Response) => {
-  const requestStartedAt = performance.now();
   const { gameId, moveData, color } = (req.body ?? {}) as { gameId?: unknown; moveData?: unknown; color?: unknown };
   if (typeof gameId !== "string" || !isColor(color) || !isMoveData(moveData)) {
     return res.status(400).send("Invalid request body");
   }
-  const loadStartedAt = performance.now();
   const loaded = await loadOwnedGame(gameId, getUserId(res));
-  const loadGameMs = performance.now() - loadStartedAt;
   if (!loaded) return res.status(404).send("Game not found");
   const { row, game, moveCount } = loaded;
   if (!mayMoveAs(row, getUserId(res), color)) return res.status(403).send("Not your color");
@@ -243,7 +239,6 @@ export const makeMove = async (req: Request, res: Response) => {
     return res.status(409).json({ error: "Time expired", winner, clock: clockView(update.clock) });
   }
 
-  const moveStartedAt = performance.now();
   try {
     game.makeMove(moveData, color, moveData.promotion);
   } catch (err) {
@@ -271,8 +266,6 @@ export const makeMove = async (req: Request, res: Response) => {
     { ply: moveCount + 1, color, move: moveData },
     ...(botMove && botColor ? [{ ply: moveCount + 2, color: botColor, move: botMove }] : []),
   ];
-  const moveProcessingMs = performance.now() - moveStartedAt;
-  const transactionStartedAt = performance.now();
   await prisma.$transaction([
     ...savedMoves.map((saved) =>
       prisma.move.create({
@@ -296,7 +289,6 @@ export const makeMove = async (req: Request, res: Response) => {
       },
     }),
   ]);
-  const transactionMs = performance.now() - transactionStartedAt;
 
   const realtimeAccessToken: unknown = res.locals.realtimeAccessToken;
   if (typeof realtimeAccessToken === "string") {
@@ -313,10 +305,8 @@ export const makeMove = async (req: Request, res: Response) => {
     }
   }
 
-  const responseStartedAt = performance.now();
   const boardState = game.getBoardState();
   const legalMoves = game.getLegalMovesForTurn();
-  const responsePreparationMs = performance.now() - responseStartedAt;
   res.json({
     boardState,
     currentTurn: game.getCurrentTurn(),
@@ -325,16 +315,6 @@ export const makeMove = async (req: Request, res: Response) => {
     clock: clock ? clockView(clock) : null,
     botMove,
   });
-  console.info(JSON.stringify({
-    event: "game_move_timing",
-    gameId: row.id,
-    ply: moveCount + 1,
-    loadGameMs: Math.round(loadGameMs),
-    moveProcessingMs: Math.round(moveProcessingMs),
-    transactionMs: Math.round(transactionMs),
-    responsePreparationMs: Math.round(responsePreparationMs),
-    totalMs: Math.round(performance.now() - requestStartedAt),
-  }));
 }
 
 // Maps the board's end state to the stored result. Active and check games return no end fields.
@@ -452,6 +432,7 @@ const gameView = ({ row, game, moves }: LoadedGame, userId: string, now: number)
     drawOfferedBy: finished ? null : row.drawOfferedBy,
     players: { white: row.whitePlayer?.username ?? null, black: row.blackPlayer?.username ?? null },
     isBotGame: row.botColor !== null,
+    botDifficulty: row.botDifficulty,
     clock,
   };
 };
@@ -461,17 +442,14 @@ export const getGame = async (req: Request, res: Response) => {
   const userId = getUserId(res);
   const now = Date.now();
 
-  const t0 = performance.now();
   let loaded = await loadOwnedGame(req.params.id, userId);
   if (!loaded) return res.status(404).send("Game not found");
 
-  const t1 = performance.now();
   if (await flagIfExpired(loaded, now)) {
     loaded = await loadOwnedGame(req.params.id, userId);
     if (!loaded) return res.status(404).send("Game not found");
   }
 
-  const t2 = performance.now();
   const view = gameView(loaded, userId, now);
   res.json(view);
 }

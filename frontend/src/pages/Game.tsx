@@ -25,6 +25,7 @@ import {
 import { subscribeToGame } from "../lib/rtChanelsSB";
 
 const API_URL = "/api";
+type BotDifficulty = "easy" | "medium" | "hard";
 // Longer than the slowest bot search plus the server's own work, so only a hung request hits it.
 const MOVE_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -107,6 +108,7 @@ type GameStateView = {
   gameId: string;
   yourColor: Color | null;
   isBotGame: boolean;
+  botDifficulty: BotDifficulty | null;
   boardState: { squares: Cell[][] };
   currentTurn: Color;
   status: GameStatus;
@@ -152,6 +154,7 @@ function Game() {
   // Set in an online game to the side this player controls; null for a local game where one player moves both sides.
   const [seat, setSeat] = useState<Color | null>(null);
   const [isBotGame, setIsBotGame] = useState(false);
+  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty | null>(null);
   const [endReason, setEndReason] = useState<string | null>(null);
   const { id: routeGameId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -208,6 +211,7 @@ function Game() {
     setEndReason(view.endReason);
     setSeat(view.yourColor);
     setIsBotGame(view.isBotGame);
+    setBotDifficulty(view.botDifficulty);
   }, []);
 
   // Reloads the full game and animates a move the board has not shown yet. Skipped while this player's own move is in flight, since its response updates the board.
@@ -388,6 +392,23 @@ function Game() {
   }, []);
 
   const startGame = () => startGameWith(timeControl);
+
+  // Starts a new bot game with the same difficulty and the player's same color as the finished one.
+  const restartBotGame = async () => {
+    if (!botDifficulty) return;
+    try {
+      const res = await authorizedFetch(`${API_URL}/game`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botDifficulty, playerColor: seat ?? "white" }),
+      });
+      if (!res.ok) throw new Error("Could not restart bot game");
+      const data: { gameId: string } = await res.json();
+      navigate(`/game/${data.gameId}`);
+    } catch {
+      setError("Could not reach the server");
+    }
+  };
 
   // The Home page's "Play alone" modal passes the chosen time control in router state; start that game once.
   const location = useLocation();
@@ -629,7 +650,13 @@ function Game() {
               <GameOverlay
                 game={{ ...game, winner: resolvedWinner }}
                 endReason={endReason}
-                restart={routeGameId ? () => navigate("/") : startGame}
+                restart={
+                  isBotGame
+                    ? () => void restartBotGame()
+                    : routeGameId
+                      ? undefined
+                      : startGame
+                }
               />
             )}
             <Board
